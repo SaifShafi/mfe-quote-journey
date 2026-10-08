@@ -1,0 +1,6 @@
+{
+  "extends": "../tsconfig.base.json",
+  // ts-loader compiles through webpack, so emit must be on here.
+  "compilerOptions": { "noEmit": false },
+  "include": ["src"]
+}
