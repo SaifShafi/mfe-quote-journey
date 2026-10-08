@@ -88,6 +88,23 @@ is actually difficult:
 - **`singleton: true` on React is not optional.** Without it the page can end up with
   two React instances and two module registries, and the symptom is hooks throwing or
   context reading as undefined under a provider that is visibly mounted.
+- **A dead remote fails in a phase React cannot see, and an error boundary alone
+  does not cover it.** This was the one real surprise. Stopping the remote's server
+  produces a `ScriptExternalLoadError` thrown inside webpack's shared-scope
+  initialisation (`__webpack_require__.I`, by way of
+  `webpack/sharing/consume/default/react/react`), because before the host can
+  resolve its *own* shared React it initialises the remote containers to negotiate
+  versions. That is a promise rejection during module loading, not an error during
+  render, so a React error boundary is the wrong instrument on its own. The fix is to
+  catch the rejection at the dynamic `import()` and resolve it to a fallback
+  component, and keep the boundary for failures after the module has loaded. Two
+  phases, two mechanisms.
+
+  Worth noting separately: the dev server's runtime-error overlay covers the page
+  when this happens, so a remote outage looks like a crashed shell even once the
+  fallback is rendering correctly underneath. In a real estate that is a monitoring
+  problem as much as a UI one, because the thing you see locally is not the thing
+  your customer sees.
 - **TypeScript cannot see across the boundary.** `host-shell/src/remotes.d.ts` is a
   hand-written declaration of the remote's contract. Nothing checks it against the
   remote. If the remote changes its export and that file is not updated, the break
@@ -113,6 +130,7 @@ command in this file.
 | What | Result | Stage |
 |---|---|---|
 | Remote code present in host bundle | None | 0 |
+| Shell survives a dead remote | Yes, degraded panel, no uncaught error | 0 |
 | Host bundle | 168 KB | 0 |
 | Remote bundle | 184 KB | 0 |
 

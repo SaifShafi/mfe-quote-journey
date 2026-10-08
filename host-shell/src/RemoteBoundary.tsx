@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { RemoteUnavailable } from './RemoteUnavailable'
 
 /**
  * One of these per remote. A remote that fails to load must cost you that
@@ -25,15 +26,7 @@ export class RemoteBoundary extends Component<
 
   render() {
     if (this.state.failed) {
-      return (
-        <section aria-live="polite">
-          <h2>This step is unavailable</h2>
-          <p>
-            The <code>{this.props.name}</code> module could not be loaded. The
-            rest of the page is unaffected.
-          </p>
-        </section>
-      )
+      return <RemoteUnavailable name={this.props.name} />
     }
     return this.props.children
   }
