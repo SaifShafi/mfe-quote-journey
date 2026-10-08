@@ -5,7 +5,7 @@
  */
 export function RemoteUnavailable({ name }: { name: string }) {
   return (
-    <section aria-live="polite">
+    <section className="panel panel--notice" aria-live="polite">
       <h2>This step is unavailable</h2>
       <p>
         The <code>{name}</code> module could not be loaded. The rest of the page

@@ -1,6 +1,8 @@
 import { Suspense, lazy, useState } from 'react'
 import { RemoteBoundary } from './RemoteBoundary'
 import { RemoteUnavailable } from './RemoteUnavailable'
+import './tokens.css'
+import './shell.css'
 
 /**
  * A remote can fail in two different phases, and they need different handling.
@@ -14,10 +16,6 @@ import { RemoteUnavailable } from './RemoteUnavailable'
  *    component.
  *
  * 2. While RENDERING, once loaded. That is what RemoteBoundary is for.
- *
- * Handling only the second case is the mistake worth recording: the dev server
- * overlay makes a dead remote look like a crashed page even when the fallback
- * rendered correctly underneath it.
  */
 const VehicleDetails = lazy(() =>
   import('remote_quote/VehicleDetails')
@@ -28,34 +26,50 @@ const VehicleDetails = lazy(() =>
     }),
 )
 
+const STEPS = ['Vehicle', 'Driver', 'Cover'] as const
+
 export function App() {
   const [submitted, setSubmitted] = useState<string | null>(null)
 
   return (
     <>
-      <header>
-        <strong>Quote journey</strong>
-        <nav aria-label="Quote steps">
+      <header className="shell-header">
+        <div className="shell-brand">
+          Quote <span>journey</span>
+        </div>
+        <nav className="shell-steps" aria-label="Quote steps">
           <ol>
-            <li>Vehicle</li>
-            <li>Driver</li>
-            <li>Cover</li>
+            {STEPS.map((step, i) => (
+              <li key={step} aria-current={i === 0 ? 'step' : undefined}>
+                {step}
+              </li>
+            ))}
           </ol>
         </nav>
       </header>
 
-      <main>
+      <main className="shell-main">
         <h1>Get a quote</h1>
+        <p className="shell-lede">
+          The shell owns this page. The form below is served by a separate
+          application and composed in at runtime.
+        </p>
 
         <RemoteBoundary name="remote_quote">
-          <Suspense fallback={<p>Loading vehicle details…</p>}>
+          <Suspense
+            fallback={<p className="loading">Loading vehicle details…</p>}
+          >
             <VehicleDetails
               onSubmit={(vehicle) => setSubmitted(vehicle.registration)}
             />
           </Suspense>
         </RemoteBoundary>
 
-        {submitted && <p role="status">Captured registration: {submitted}</p>}
+        {submitted && (
+          <p className="result" role="status">
+            Captured registration: <strong>{submitted || '—'}</strong>
+          </p>
+        )}
       </main>
     </>
   )

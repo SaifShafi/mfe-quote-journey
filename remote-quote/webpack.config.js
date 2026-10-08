@@ -24,6 +24,7 @@ module.exports = {
         // matchers it has no types for.
         exclude: [/node_modules/, /\.test\.tsx?$/],
       },
+      { test: /\.css$/, use: ['style-loader', 'css-loader'] },
     ],
   },
   devServer: {

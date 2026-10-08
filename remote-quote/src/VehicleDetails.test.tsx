@@ -11,6 +11,12 @@ describe('VehicleDetails', () => {
     expect(screen.getByLabelText('Annual mileage')).toBeInTheDocument()
   })
 
+  it('exposes the mileage hint as a description, not as part of the name', () => {
+    render(<VehicleDetails />)
+    const mileage = screen.getByLabelText('Annual mileage')
+    expect(mileage).toHaveAccessibleDescription('Approximate is fine')
+  })
+
   it('hands the captured vehicle to its consumer on submit', async () => {
     const onSubmit = vi.fn()
     render(<VehicleDetails onSubmit={onSubmit} />)

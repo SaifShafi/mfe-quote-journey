@@ -105,6 +105,20 @@ is actually difficult:
   fallback is rendering correctly underneath. In a real estate that is a monitoring
   problem as much as a UI one, because the thing you see locally is not the thing
   your customer sees.
+- **Design tokens are the cross-boundary contract, and nothing checks them.** The
+  shell owns `tokens.css`; the remote's stylesheet contains no hard-coded colour or
+  spacing value and reads everything through CSS custom properties. That is how a
+  design system stays consistent across remotes that may not even share a framework,
+  because custom properties cross framework boundaries and pierce shadow DOM where an
+  imported theme object does not. The cost is symmetrical with the TypeScript problem
+  below: rename `--color-accent` in the shell and the remote does not fail to build,
+  it quietly renders with the browser's initial value.
+- **A visible hint inside a `<label>` becomes part of the input's accessible name.**
+  Adding "(approximate)" next to "Annual mileage" changed the name to "Annual mileage
+  (approximate)", which is noise for a screen reader user. The unit test asserting the
+  accessible name caught it immediately. Fixed with `aria-describedby`, so the label is
+  the name and the hint is a description, and a guard test now asserts the description
+  separately.
 - **TypeScript cannot see across the boundary.** `host-shell/src/remotes.d.ts` is a
   hand-written declaration of the remote's contract. Nothing checks it against the
   remote. If the remote changes its export and that file is not updated, the break
@@ -133,6 +147,7 @@ command in this file.
 | Shell survives a dead remote | Yes, degraded panel, no uncaught error | 0 |
 | Host bundle | 168 KB | 0 |
 | Remote bundle | 184 KB | 0 |
+| Unit tests | 3 passing | 0 |
 
 ## AI workflow
 
