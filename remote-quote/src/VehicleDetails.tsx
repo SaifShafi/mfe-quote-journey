@@ -10,9 +10,8 @@ export interface Vehicle {
 const EMPTY: Vehicle = { registration: '', year: '', mileage: '' }
 
 /**
- * Deliberately simple. The form is not the point of this build; the composition
- * boundary is. Local state lives here because it never needs to cross a remote
- * boundary (see README on where state belongs).
+ * Vehicle-details stub. Local state stays here because it does not need to
+ * cross a remote boundary.
  */
 export function VehicleDetails({
   onSubmit,
@@ -65,8 +64,8 @@ export function VehicleDetails({
 
         <div className="quote-field">
           <label htmlFor="mileage">Annual mileage</label>
-          {/* The hint is a DESCRIPTION, not part of the name. Putting it inside
-              the label makes the input's accessible name "Annual mileage
+          {/* The hint is a description, not part of the accessible name.
+              Putting it inside the label makes the name "Annual mileage
               (approximate)", which is noise for a screen reader user and broke
               the test that asserts the name. aria-describedby keeps the name
               clean and still announces the hint. */}

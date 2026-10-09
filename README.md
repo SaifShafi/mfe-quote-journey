@@ -4,18 +4,17 @@ A micro frontend build: one host shell composing independently deployed remotes 
 runtime with Webpack 5 Module Federation, React and TypeScript, with a NestJS
 backend-for-frontend in front of it.
 
-Built to understand the architecture first-hand rather than from documentation, and
-measured as it goes. Every number below is produced by a command in this README.
+Built to learn the architecture by running it. Every number below comes from a
+command in this README.
 
 **Status: Stage 0.** Host and one remote composing over the network. See
-[Roadmap](#roadmap) for what is and is not done yet.
+[Roadmap](#roadmap).
 
 ## Why a quote journey
 
-An insurance quote funnel is the clearest small example of the problem micro
-frontends exist to solve: several teams own consecutive steps of one journey, the
-steps need to look like one product, and each team wants to deploy without waiting
-for the others.
+An insurance quote funnel is a small version of the problem micro frontends exist
+to solve: several teams own consecutive steps of one journey, the steps need to
+look like one product, and each team wants to deploy without waiting for the others.
 
 ## Architecture
 
@@ -24,13 +23,12 @@ host-shell     :3000   the frame. Owns layout, navigation, and (later) the sessi
 remote-quote   :3001   vehicle details. Its own build, its own server, its own tests
 ```
 
-The shell has **no build-time knowledge** of the remote. At runtime it fetches
+The shell does not know the remote at build time. At runtime it fetches
 `http://localhost:3001/remoteEntry.js`, reads what that remote exposes, and loads the
 component. The remote team deploys whenever they like and the shell picks it up on
 the next page load, with nobody rebuilding the shell.
 
-That is the whole trade, and it is paid for with a class of bug that only exists once
-the pieces are together.
+Independent deploys buy a class of bug that only exists once the pieces are together.
 
 ## Run it
 
@@ -45,8 +43,8 @@ Then open <http://localhost:3000>.
 
 ## Proving the composition is real
 
-A federated host is easy to confuse with an app that merely code-splits. Three checks
-distinguish them, and all three are reproducible:
+These three checks show the remote is loaded over the network, not bundled into the
+shell. All three are reproducible.
 
 **1. The remote's code is not in the shell's bundle.**
 
@@ -68,13 +66,12 @@ Stop the process on `:3001`, reload `:3000`. The shell still renders; the vehicl
 is replaced by its fallback. If the whole page dies, the error boundary is wrong. If
 nothing changes, the composition was never happening over the network.
 
-That third check is the one worth keeping. It is the only one that tests the failure
-mode a real estate actually hits.
+That is the failure a real estate actually hits.
 
 ## Notes from building it
 
 Things that cost time, recorded because the configuration is where this architecture
-is actually difficult:
+is difficult:
 
 - **`publicPath` must be absolute on the remote.** The host fetches the remote's
   chunks by URL, so they cannot resolve against the host's origin. A relative
@@ -100,19 +97,18 @@ is actually difficult:
   component, and keep the boundary for failures after the module has loaded. Two
   phases, two mechanisms.
 
-  Worth noting separately: the dev server's runtime-error overlay covers the page
-  when this happens, so a remote outage looks like a crashed shell even once the
-  fallback is rendering correctly underneath. In a real estate that is a monitoring
-  problem as much as a UI one, because the thing you see locally is not the thing
-  your customer sees.
+  The dev server's runtime-error overlay covers the page when this happens, so a
+  remote outage looks like a crashed shell even once the fallback is rendering
+  correctly underneath. Locally you see the overlay. A customer would see the
+  fallback. That is a monitoring problem as much as a UI one.
 - **Design tokens are the cross-boundary contract, and nothing checks them.** The
   shell owns `tokens.css`; the remote's stylesheet contains no hard-coded colour or
   spacing value and reads everything through CSS custom properties. That is how a
   design system stays consistent across remotes that may not even share a framework,
   because custom properties cross framework boundaries and pierce shadow DOM where an
-  imported theme object does not. The cost is symmetrical with the TypeScript problem
-  below: rename `--color-accent` in the shell and the remote does not fail to build,
-  it quietly renders with the browser's initial value.
+  imported theme object does not. Rename `--color-accent` in the shell and the remote
+  does not fail to build. It renders with the browser's initial value. Same shape as
+  the TypeScript problem below.
 - **A visible hint inside a `<label>` becomes part of the input's accessible name.**
   Adding "(approximate)" next to "Annual mileage" changed the name to "Annual mileage
   (approximate)", which is noise for a screen reader user. The unit test asserting the
@@ -122,8 +118,8 @@ is actually difficult:
 - **TypeScript cannot see across the boundary.** `host-shell/src/remotes.d.ts` is a
   hand-written declaration of the remote's contract. Nothing checks it against the
   remote. If the remote changes its export and that file is not updated, the break
-  appears at runtime in the composed app only. That file *is* the contract, and
-  keeping it honest is a process problem rather than a type problem.
+  appears at runtime in the composed app only. That file is the contract. Keeping it
+  honest is process, not types.
 
 ## Roadmap
 
@@ -152,7 +148,7 @@ command in this file.
 ## AI workflow
 
 Built with Claude Code in supervised review-every-action mode. Corrections that were
-needed, recorded honestly rather than tidied away:
+needed:
 
 - The initial `tsconfig` carried `noEmit: true` in the shared base, which left
   `ts-loader` emitting nothing and the build failing with "TypeScript emitted no

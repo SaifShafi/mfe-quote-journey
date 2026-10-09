@@ -4,12 +4,11 @@
  * These are CSS custom properties rather than a shared JS theme object on
  * purpose. Custom properties cross framework boundaries and pierce shadow DOM,
  * so a React remote, an Angular remote and a web component can all read the
- * same values without importing anything from each other. That is the usual
- * reason a design system in a mixed estate distributes tokens this way.
+ * same values without importing anything from each other.
  *
- * The cost: these names are a contract that nothing type-checks. If the shell
- * renames --color-accent, every remote silently falls back to its initial
- * value and nobody's build fails.
+ * These names are a contract that nothing type-checks. If the shell renames
+ * --color-accent, every remote silently falls back to its initial value and
+ * nobody's build fails.
  */
 :root {
   color-scheme: light dark;
@@ -89,8 +88,7 @@
   --color-focus: #7ca0f7;
 }
 
-/* Every interactive element gets the same visible ring. Keyboard users are the
-   reason the whole Playwright keyboard journey exists. */
+/* Same visible ring on every interactive element. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: var(--focus-ring-width) solid var(--color-focus);
   outline-offset: var(--focus-ring-offset);

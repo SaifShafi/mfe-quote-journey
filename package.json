@@ -2,7 +2,7 @@
   "name": "mfe-quote-journey",
   "private": true,
   "version": "0.1.0",
-  "description": "A federated micro frontend build: one host shell composing independently deployed remotes at runtime, measured.",
+  "description": "A federated micro frontend build: one host shell composing independently deployed remotes at runtime.",
   "workspaces": ["host-shell", "remote-quote"],
   "scripts": {
     "start": "concurrently -n shell,quote -c cyan,magenta \"npm:start:shell\" \"npm:start:quote\"",

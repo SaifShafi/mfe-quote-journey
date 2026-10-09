@@ -29,9 +29,8 @@ module.exports = {
   plugins: [
     new ModuleFederationPlugin({
       name: 'host_shell',
-      // name -> global@url. The host knows NOTHING about what is inside
-      // remote_quote at build time; it discovers that at runtime by fetching
-      // remoteEntry.js. That is the whole difference from an npm dependency.
+      // name -> global@url. The host does not know what is inside remote_quote
+      // at build time; it discovers that at runtime by fetching remoteEntry.js.
       remotes: {
         remote_quote: 'remote_quote@http://localhost:3001/remoteEntry.js',
       },

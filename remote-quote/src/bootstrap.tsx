@@ -1,11 +1,11 @@
 import { createRoot } from 'react-dom/client'
 import { VehicleDetails } from './VehicleDetails'
-// Standalone only. Inside the shell these come from the host, which is the
-// point: the remote does not own the tokens it styles itself with.
+// Standalone only. Inside the shell these come from the host: the remote does
+// not own the tokens it styles itself with.
 import '../../host-shell/src/tokens.css'
 
 // Standalone mode: the remote runs on its own at :3001 as a normal app.
-// This file is NOT used when the host consumes the remote.
+// This file is not used when the host consumes the remote.
 const el = document.getElementById('root')
 if (el) {
   createRoot(el).render(

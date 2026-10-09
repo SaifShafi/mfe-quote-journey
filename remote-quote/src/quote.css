@@ -1,11 +1,10 @@
 /*
- * The remote styles itself ENTIRELY from tokens it does not own. There is no
+ * The remote styles itself from tokens it does not own. There is no
  * hard-coded colour or spacing value in this file.
  *
- * That is the design-system contract in miniature, and it is also the failure
- * mode: if the shell renames --color-accent, this remote does not fail to
- * build, it just quietly renders with the browser's initial value. Nothing
- * type-checks a CSS custom property name across an application boundary.
+ * If the shell renames --color-accent, this remote does not fail to build. It
+ * renders with the browser's initial value. Nothing type-checks a CSS custom
+ * property name across an application boundary.
  */
 
 .quote-form {

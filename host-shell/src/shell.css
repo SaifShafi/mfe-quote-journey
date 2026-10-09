@@ -127,8 +127,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Marks which remote served a region. Useful while building, and it is the
-   visual answer to "which module is this?" */
+/* Marks which remote served a region. Useful while building. */
 .origin-tag {
   display: inline-block;
   margin-bottom: var(--space-4);
