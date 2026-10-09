@@ -7,11 +7,9 @@ Context and conventions for anyone, human or agent, picking this up mid-build.
 A host shell composing independently deployed micro frontends at runtime with Webpack 5
 Module Federation, React and TypeScript, with a NestJS backend-for-frontend.
 
-It is a learning-by-building project, so **the findings matter more than the features**.
-The point is not a working quote funnel. The point is understanding what this
-architecture costs, what breaks, and what the numbers actually are. A stage is not done
-because the code runs; it is done when something has been measured or a failure mode has
-been reproduced and written up.
+It is a learning-by-building project. Findings matter more than features. A stage is
+done when something has been measured or a failure mode has been reproduced and written
+up, not when the code merely runs.
 
 This mirrors the house style of two sibling repos: build the competing version, measure
 it, and publish the unflattering numbers alongside the good ones.
@@ -58,8 +56,8 @@ npm run build           # production build of both
 
 ## The three checks that prove composition is real
 
-Run these after any change to the federation setup. A federated host is easy to confuse
-with an app that merely code-splits.
+Run these after any change to the federation setup. They show the remote is loaded over
+the network, not bundled into the shell.
 
 ```bash
 npm run build
@@ -106,7 +104,7 @@ note on what the singleton actually buys.
   remote mounted. Report both numbers.
 
 Acceptance: both axe numbers in the README. If composing produces violations that
-isolated remotes do not, that is the headline finding of the stage. Expect duplicate
+isolated remotes do not, write that up as the finding of the stage. Expect duplicate
 landmarks, duplicate IDs, heading order across boundaries, and focus order between
 modules.
 
