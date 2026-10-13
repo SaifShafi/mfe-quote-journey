@@ -1,35 +1,28 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, useState } from 'react'
 import { RemoteBoundary } from './RemoteBoundary'
-import { RemoteUnavailable } from './RemoteUnavailable'
+import { loadRemote } from './loadRemote'
+import type { Vehicle } from 'remote_quote/VehicleDetails'
 import './tokens.css'
 import './shell.css'
 
-/**
- * A remote can fail in two different phases, and they need different handling.
- *
- * 1. While LOADING. The host fetches remoteEntry.js and initialises the remote's
- *    container to negotiate shared modules. If the remote is unreachable this
- *    throws a ScriptExternalLoadError inside webpack's shared-scope init, which
- *    is a promise rejection and not a React render error. An error boundary
- *    alone does not reliably cover it, and it surfaces as an unhandled runtime
- *    error. So the rejection is caught here, at the import, and turned into a
- *    component.
- *
- * 2. While RENDERING, once loaded. That is what RemoteBoundary is for.
- */
-const VehicleDetails = lazy(() =>
-  import('remote_quote/VehicleDetails')
-    .then((m) => ({ default: m.VehicleDetails }))
-    .catch((error: unknown) => {
-      console.error('[shell] remote "remote_quote" failed to load', error)
-      return { default: () => <RemoteUnavailable name="remote_quote" /> }
-    }),
-)
+// One lazy component per remote, each with its own load-failure handling. See
+// loadRemote for why the rejection is caught at the import and not only in a
+// boundary.
+const VehicleDetails = loadRemote<{
+  headingLevel?: 2 | 3 | 4
+  onSubmit?: (vehicle: Vehicle) => void
+}>('remote_quote', () => import('remote_quote/VehicleDetails'), 'VehicleDetails')
+
+const PolicySummary = loadRemote<{
+  headingLevel?: 2 | 3 | 4
+  onExcessChange?: (excess: string) => void
+}>('remote_account', () => import('remote_account/PolicySummary'), 'PolicySummary')
 
 const STEPS = ['Vehicle', 'Driver', 'Cover'] as const
 
 export function App() {
   const [submitted, setSubmitted] = useState<string | null>(null)
+  const [excess, setExcess] = useState<string | null>(null)
 
   return (
     <>
@@ -51,23 +44,47 @@ export function App() {
       <main className="shell-main">
         <h1>Get a quote</h1>
         <p className="shell-lede">
-          The shell owns this page. The form below is served by a separate
-          application and composed in at runtime.
+          The shell owns this page. Both panels below are served by separate
+          applications and composed in at runtime.
         </p>
 
-        <RemoteBoundary name="remote_quote">
-          <Suspense
-            fallback={<p className="loading">Loading vehicle details…</p>}
-          >
-            <VehicleDetails
-              onSubmit={(vehicle) => setSubmitted(vehicle.registration)}
-            />
-          </Suspense>
-        </RemoteBoundary>
+        <div className="shell-stack">
+          {/* The shell owns the h1, so each remote is told what level its own
+              heading sits at. A remote cannot know how deep it was mounted. */}
+          <RemoteBoundary name="remote_quote">
+            <Suspense
+              fallback={<p className="loading">Loading vehicle details…</p>}
+            >
+              <VehicleDetails
+                headingLevel={2}
+                onSubmit={(vehicle) => setSubmitted(vehicle.registration)}
+              />
+            </Suspense>
+          </RemoteBoundary>
 
-        {submitted && (
+          {/* A second boundary, not a shared one. One boundary around both
+              remotes would mean either remote failing costs you both panels. */}
+          <RemoteBoundary name="remote_account">
+            <Suspense
+              fallback={<p className="loading">Loading your policy…</p>}
+            >
+              <PolicySummary headingLevel={2} onExcessChange={setExcess} />
+            </Suspense>
+          </RemoteBoundary>
+        </div>
+
+        {(submitted || excess) && (
           <p className="result" role="status">
-            Captured registration: <strong>{submitted || '—'}</strong>
+            {submitted && (
+              <>
+                Captured registration: <strong>{submitted}</strong>.{' '}
+              </>
+            )}
+            {excess && (
+              <>
+                Voluntary excess: <strong>{excess}</strong>.
+              </>
+            )}
           </p>
         )}
       </main>

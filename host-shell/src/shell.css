@@ -102,6 +102,10 @@ body {
   font-size: var(--font-size-sm);
 }
 
+.panel--notice .sui-button {
+  margin-top: var(--space-3);
+}
+
 .panel--notice code {
   font-size: 0.9em;
   padding: 0 var(--space-1);
@@ -147,4 +151,11 @@ body {
   .shell-main {
     padding-top: var(--space-5);
   }
+}
+
+/* Vertical rhythm between remote surfaces. The shell owns the gaps BETWEEN
+   remotes; each remote owns the layout inside its own panel. */
+.shell-stack {
+  display: grid;
+  gap: var(--space-5);
 }

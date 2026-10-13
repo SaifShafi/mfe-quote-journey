@@ -1,0 +1,10 @@
+{
+  "name": "shared-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Design system primitives consumed by every remote as a federated singleton.",
+  "main": "src/index.ts",
+  "peerDependencies": {
+    "react": "^18.3.1"
+  }
+}

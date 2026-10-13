@@ -2,6 +2,7 @@ const path = require('path')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 const { ModuleFederationPlugin } = require('webpack').container
 
+const { sharedModules } = require('../shared-config/federation')
 const deps = require('./package.json').dependencies
 
 module.exports = {
@@ -22,6 +23,10 @@ module.exports = {
         // Tests are run by Vitest, not bundled. Without this, ts-loader
         // type-checks them against the app tsconfig and the build fails on
         // matchers it has no types for.
+        //
+        // shared-ui is a workspace package of TypeScript source, reached through
+        // a symlink in node_modules. Webpack resolves that to its real path
+        // outside node_modules, so this rule compiles it despite the exclude.
         exclude: [/node_modules/, /\.test\.tsx?$/],
       },
       { test: /\.css$/, use: ['style-loader', 'css-loader'] },
@@ -44,11 +49,11 @@ module.exports = {
         './VehicleDetails': './src/VehicleDetails',
       },
       // singleton: one React instance across the whole page, whoever loads first.
-      // Without this you can get two copies and hooks break in ways that look unrelated.
-      shared: {
-        react: { singleton: true, requiredVersion: deps.react },
-        'react-dom': { singleton: true, requiredVersion: deps['react-dom'] },
-      },
+      // Without this you can get two copies and hooks break in ways that look
+      // unrelated. Same for shared-ui, which holds React state through useId.
+      // The map is in shared-config because all three applications must agree
+      // on it, and because Stage 1 measures what happens when they do not.
+      shared: sharedModules(deps),
     }),
     new HtmlWebpackPlugin({ template: './public/index.html' }),
   ],

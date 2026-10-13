@@ -1,0 +1,101 @@
+/*
+ * shared-ui styles itself from the shell's tokens, same contract as every
+ * remote. No hard-coded colour or spacing value in this file.
+ *
+ * These class names are prefixed because this stylesheet is injected once by
+ * whichever application wins the singleton negotiation, into a page that also
+ * carries the shell's stylesheet and every remote's. A generic `.button` here
+ * would collide with a remote that never imported this package.
+ */
+
+.sui-panel {
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+}
+
+.sui-panel__heading {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-lg);
+  letter-spacing: -0.01em;
+}
+
+.sui-field {
+  display: grid;
+  gap: var(--space-2);
+  /* Without this, a field placed next to one that has a hint stretches its own
+     input to fill the taller grid track, and two inputs sitting side by side
+     come out different heights. The consumer cannot fix it from outside,
+     because it only happens in layouts the primitive knows nothing about. */
+  align-content: start;
+}
+
+.sui-field__label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.sui-field__hint {
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.sui-input {
+  font: inherit;
+  width: 100%;
+  color: var(--color-text);
+  background: var(--color-bg);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.sui-input:hover {
+  border-color: var(--color-text-muted);
+}
+
+.sui-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.sui-button {
+  justify-self: start;
+  font: inherit;
+  font-weight: 600;
+  padding: var(--space-3) var(--space-5);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.sui-button--primary {
+  color: var(--color-accent-text);
+  background: var(--color-accent);
+}
+
+.sui-button--primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.sui-button--secondary {
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.sui-button--secondary:hover {
+  border-color: var(--color-text-muted);
+}
+
+@media (max-width: 36rem) {
+  .sui-button {
+    justify-self: stretch;
+  }
+}

@@ -38,21 +38,42 @@ it, and publish the unflattering numbers alongside the good ones.
 ```
 host-shell/      :3000  the shell. Owns layout, navigation, design tokens, and later the session
 remote-quote/    :3001  vehicle details. Own build, own server, own tests
+remote-account/  :3002  policy summary. Same
+shared-ui/              button, input, panel. Federated singleton, consumed by all three
+shared-config/          the shared-module map all three webpack configs read from
+scripts/                measurement harnesses. Every number in the README comes from one
 ```
 
-Both apps use `ts-loader` through webpack. Tests run on Vitest from the workspace root,
-and are excluded from the webpack build.
+All three apps use `ts-loader` through webpack. Tests run on Vitest from the workspace
+root, and are excluded from the webpack build.
+
+`shared-ui` ships TypeScript source with no build step of its own, reached through the
+npm workspace symlink. Webpack resolves that to a real path outside `node_modules`, so
+`ts-loader` compiles it despite the `exclude`. Each app's tsconfig has to `include`
+`../shared-ui/src` for this to type-check.
 
 ## Commands
 
 ```bash
 npm install
-npm start               # both apps
-npm run start:shell     # just the shell, if the other is already running
-npm run start:quote     # just the remote
+npm start               # all three apps
+npm run start:shell     # just the shell, if the others are already running
+npm run start:quote
+npm run start:account
 npm test                # Vitest
-npm run build           # production build of both
+npm run build           # production build of all three
+
+npm run measure:outage  # asserts: one remote down costs exactly one panel
+npm run measure:shared  # bytes on disk per sharing mode
+npm run measure:runtime # bytes fetched, React copies, console output per mode
+npm run serve:dist      # serve the production builds on the real ports
 ```
+
+The measurement scripts drive headless Chromium through Playwright, pinned to 1.52
+because later versions need Node 20 and this machine has Node 18. `MFE_SHARED`
+switches the shared-module map (`all`, `no-ui`, `dup-react`, `none`); everything
+except `all` is a deliberately broken build, and the scripts always leave `all` built
+last.
 
 ## The three checks that prove composition is real
 
@@ -61,13 +82,17 @@ the network, not bundled into the shell.
 
 ```bash
 npm run build
-grep -rl "Year of manufacture" host-shell/dist/     # must find nothing
-grep -rl "Year of manufacture" remote-quote/dist/   # must find something
-grep -roh "localhost:3001/remoteEntry.js" host-shell/dist/
+grep -rl "Year of manufacture" host-shell/dist/       # must find nothing
+grep -rl "Your current policy" host-shell/dist/       # must find nothing
+grep -rl "Year of manufacture" remote-quote/dist/     # must find something
+grep -rl "Your current policy" remote-account/dist/   # must find something
+grep -roh "localhost:300[12]/remoteEntry.js" host-shell/dist/ | sort -u
 ```
 
-Then the behavioural one: `lsof -ti:3001 | xargs kill`, reload `:3000`, and confirm the
-shell renders with the degraded panel instead of dying. Restart with
+Then the behavioural one, now automated and asserting: `npm run measure:outage`. It
+exits non-zero if any outage case loses the shell, raises an uncaught error, or
+degrades a panel belonging to a remote that is still up. By hand the Stage 0 version
+still works: `lsof -ti:3001 | xargs kill`, reload `:3000`, restart with
 `npm run start:quote`.
 
 **Note for agents:** the dev servers read `tsconfig` once at startup. After changing any
@@ -83,17 +108,15 @@ the README roadmap and measurements table as each lands.
 Acceptance: the three checks above pass, plus a dead remote degrades to a fallback with
 no uncaught error. Unit tests on the remote's form.
 
-### Stage 1: second remote and a shared component package
+### Stage 1: second remote and a shared component package. DONE
 
-- Add `remote-account` on `:3002`, exposing a policy summary surface.
-- Extract a `shared-ui` package (button, input, panel) consumed by both remotes as a
-  federated singleton.
-- **Measure:** total bytes with the shared package as a singleton versus each remote
-  bundling its own copy. Also React itself as singleton versus duplicated, including
-  capturing the actual error a duplicated React produces.
+`remote-account` on `:3002` exposing `./PolicySummary`; `shared-ui` extracted and
+consumed by all three as a federated singleton; both byte measurements and the
+duplicate-React error in the README, each with its command.
 
-Acceptance: a measurement in the README with the command that produced it, and a written
-note on what the singleton actually buys.
+Headline: sharing costs 21.4 KB on disk and saves 2.9 KB over the wire. The singleton
+is not a byte optimisation at this size. What it buys is one React and one module
+registry, and the cost of not having that is a broken page, not a slow one.
 
 ### Stage 2: deliberate cross-remote state, and an integration stage in CI
 
@@ -101,12 +124,16 @@ note on what the singleton actually buys.
   URL, so a deep link and a refresh both work.
 - Playwright running against the **composed** page, not each remote alone.
 - axe run twice: against each remote in isolation, and against the shell with every
-  remote mounted. Report both numbers.
+  remote mounted. Report both numbers. Both remotes already serve a standalone page at
+  their own port for the isolated half.
+- Playwright is already installed and pinned at 1.52 (Node 18). Stage 1 uses the
+  library directly in `scripts/`; this stage adds the runner and the config.
 
 Acceptance: both axe numbers in the README. If composing produces violations that
 isolated remotes do not, write that up as the finding of the stage. Expect duplicate
-landmarks, duplicate IDs, heading order across boundaries, and focus order between
-modules.
+landmarks, heading order across boundaries, and focus order between modules. Duplicate
+IDs are already guarded in `host-shell/src/composition.test.tsx`, so a Stage 2 run that
+finds them means the guard is wrong.
 
 ### Stage 3: NestJS backend-for-frontend
 
@@ -151,4 +178,22 @@ exists:
    `host-shell/src/remotes.d.ts`, the hand-written declaration of the remote's contract
    that nothing verifies against the remote either.
 3. **A visible hint inside a `<label>` joins the input's accessible name.** Caught by a
-   unit test. Fixed with `aria-describedby` plus a guard test.
+   unit test. Fixed with `aria-describedby` plus a guard test, and the fix now lives in
+   `shared-ui`'s `Input`, so no remote can reintroduce it.
+4. **A federated singleton makes the build bigger, not smaller.** Every participant
+   still emits a fallback copy of every shared module, so `all` costs 21.4 KB more on
+   disk than `none`. The deduplication happens when the browser chooses which copy to
+   fetch, worth 2.9 KB here. A bundle-size budget in CI would read this backwards.
+5. **Removing React from the shared map breaks the page, and the error never says
+   React.** `TypeError: Cannot read properties of null (reading 'useState')`, thrown in
+   the remote's bundle and called from React DOM in the host's. The null is
+   `ReactCurrentDispatcher.current` on the remote's own React core, which the host's
+   React DOM never set.
+6. **`singleton: false` does not produce a duplicate when versions match.** Webpack's
+   shared scope is keyed by version, so three apps asking for `^18.3.1` collapse to one
+   copy regardless. This corrected a Stage 0 claim. The flag matters under version
+   skew, which is Stage 5.
+7. **Webpack breaks a shared-scope tie on the providing application's name.** React is
+   served from `remote-quote` in every working mode, because `remote-quote` sorts after
+   `host-shell`. The host's framework arrives from a remote, and nothing in the host's
+   config says so.

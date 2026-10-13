@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Button, Input, Panel } from 'shared-ui'
 import './quote.css'
 
 export interface Vehicle {
@@ -12,10 +13,17 @@ const EMPTY: Vehicle = { registration: '', year: '', mileage: '' }
 /**
  * Vehicle-details stub. Local state stays here because it does not need to
  * cross a remote boundary.
+ *
+ * Every control comes from shared-ui. Before the package existed this file
+ * owned its own label, input and button markup, and quote.css owned their
+ * styling. Both have gone, which is what the singleton is for: the other remote
+ * gets the same controls without either team copying the other's CSS.
  */
 export function VehicleDetails({
+  headingLevel = 2,
   onSubmit,
 }: {
+  headingLevel?: 2 | 3 | 4
   onSubmit?: (vehicle: Vehicle) => void
 }) {
   const [vehicle, setVehicle] = useState<Vehicle>(EMPTY)
@@ -24,69 +32,50 @@ export function VehicleDetails({
     setVehicle((v) => ({ ...v, [key]: e.target.value }))
 
   return (
-    <form
-      className="quote-form"
-      onSubmit={(e) => {
-        e.preventDefault()
-        onSubmit?.(vehicle)
-      }}
-      aria-labelledby="vehicle-details-heading"
-    >
+    <Panel heading="Vehicle details" headingLevel={headingLevel}>
       <span className="origin-tag">served by remote_quote</span>
 
-      <h2 id="vehicle-details-heading">Vehicle details</h2>
-
-      <div className="quote-field">
-        <label htmlFor="registration">Registration</label>
-        <input
-          id="registration"
-          name="registration"
+      <form
+        className="quote-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          onSubmit?.(vehicle)
+        }}
+      >
+        <Input
+          label="Registration"
           value={vehicle.registration}
           onChange={set('registration')}
           placeholder="AB12 CDE"
           autoComplete="off"
           spellCheck={false}
         />
-      </div>
 
-      <div className="quote-row">
-        <div className="quote-field">
-          <label htmlFor="year">Year of manufacture</label>
-          <input
-            id="year"
-            name="year"
+        <div className="quote-row">
+          <Input
+            label="Year of manufacture"
             inputMode="numeric"
             value={vehicle.year}
             onChange={set('year')}
             placeholder="2019"
           />
-        </div>
 
-        <div className="quote-field">
-          <label htmlFor="mileage">Annual mileage</label>
-          {/* The hint is a description, not part of the accessible name.
-              Putting it inside the label makes the name "Annual mileage
-              (approximate)", which is noise for a screen reader user and broke
-              the test that asserts the name. aria-describedby keeps the name
-              clean and still announces the hint. */}
-          <input
-            id="mileage"
-            name="mileage"
+          {/* The hint is a description, not part of the accessible name. That
+              rule now lives inside shared-ui's Input, so this remote cannot get
+              it wrong and neither can the next one. */}
+          <Input
+            label="Annual mileage"
+            hint="Approximate is fine"
             inputMode="numeric"
             value={vehicle.mileage}
             onChange={set('mileage')}
             placeholder="8000"
-            aria-describedby="mileage-hint"
           />
-          <span className="hint" id="mileage-hint">
-            Approximate is fine
-          </span>
         </div>
-      </div>
 
-      <button className="quote-submit" type="submit">
-        Continue
-      </button>
-    </form>
+        {/* shared-ui's Button defaults to type="button", so a submit is explicit. */}
+        <Button type="submit">Continue</Button>
+      </form>
+    </Panel>
   )
 }

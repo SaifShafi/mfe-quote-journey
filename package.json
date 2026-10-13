@@ -3,14 +3,24 @@
   "private": true,
   "version": "0.1.0",
   "description": "A federated micro frontend build: one host shell composing independently deployed remotes at runtime.",
-  "workspaces": ["host-shell", "remote-quote"],
+  "workspaces": [
+    "shared-ui",
+    "host-shell",
+    "remote-quote",
+    "remote-account"
+  ],
   "scripts": {
-    "start": "concurrently -n shell,quote -c cyan,magenta \"npm:start:shell\" \"npm:start:quote\"",
+    "start": "concurrently -n shell,quote,account -c cyan,magenta,yellow \"npm:start:shell\" \"npm:start:quote\" \"npm:start:account\"",
     "start:shell": "npm --workspace host-shell run start",
     "start:quote": "npm --workspace remote-quote run start",
-    "build": "npm --workspace remote-quote run build && npm --workspace host-shell run build",
+    "start:account": "npm --workspace remote-account run start",
+    "build": "npm --workspace remote-quote run build && npm --workspace remote-account run build && npm --workspace host-shell run build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "measure:shared": "node scripts/measure-shared.mjs",
+    "measure:runtime": "node scripts/measure-runtime.mjs",
+    "serve:dist": "node scripts/serve-dist.mjs",
+    "measure:outage": "node scripts/measure-outage.mjs"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.5",
@@ -20,6 +30,7 @@
     "@types/react-dom": "^18.3.0",
     "concurrently": "^8.2.2",
     "jsdom": "^24.0.0",
+    "playwright": "^1.52.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   }

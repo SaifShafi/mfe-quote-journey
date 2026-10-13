@@ -1,6 +1,8 @@
 {
   "extends": "../tsconfig.base.json",
   // ts-loader compiles through webpack, so emit must be on here.
+  // shared-ui is included because webpack hands ts-loader its source files,
+  // resolved through the workspace symlink to a real path outside node_modules.
   "compilerOptions": { "noEmit": false },
-  "include": ["src", "src/remotes.d.ts"]
+  "include": ["src", "src/remotes.d.ts", "../shared-ui/src"]
 }
