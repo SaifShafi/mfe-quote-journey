@@ -106,8 +106,23 @@ async function measure(mode) {
   // keeps host-shell's own bundle out of the second navigation's bytes and
   // leaves only remote_account's federated chunks to be counted on top of
   // what visiting /vehicle already fetched.
+  //
+  // networkidle is the wrong signal here, Stage 4 made that concrete: with
+  // each route fetching its own bff resource independently, /vehicle's own
+  // fetch can still be in flight when this click happens, and the gaps
+  // between its request and /cover's can each look like 500ms of quiet on
+  // their own, firing networkidle before /cover's data has actually
+  // arrived. Waiting for the element that fetch produces is a signal that
+  // is actually true when it resolves.
   await page.getByRole('link', { name: 'Cover' }).click()
-  await page.waitForLoadState('networkidle')
+  await Promise.race([
+    page.waitForSelector('.account-facts', { timeout: 10_000 }),
+    page.waitForSelector('.panel--notice', { timeout: 10_000 }),
+  ]).catch(() => {})
+  // A best-effort top-up, not the real signal: lets a trailing request still
+  // in flight (/vehicle's own fetch sometimes resolves after the click,
+  // since navigating away does not cancel it) land in the byte count too.
+  await page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => {})
   const account = await page.evaluate(() => !!document.querySelector('.account-facts'))
   const accountDegraded = await page.evaluate(
     () => document.querySelectorAll('.panel--notice').length,

@@ -25,7 +25,8 @@
     "start:bff": "npm --workspace bff run start",
     "measure:bff": "node scripts/measure-bff.mjs",
     "measure:axe": "node scripts/measure-axe.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "measure:lazy": "node scripts/measure-lazy.mjs"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.5",

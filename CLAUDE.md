@@ -52,6 +52,14 @@ mounts `remote_account`. State that crosses that boundary (the submitted registr
 goes in the URL's query string, not component state, so a deep link to `/cover` and a
 refresh of it both work. See `host-shell/src/VehicleStep.tsx` and `CoverStep.tsx`.
 
+Both step components are `React.lazy`-imported from `App.tsx` (Stage 4), so each
+route's own code, including the `loadRemote()` call for its remote, is a separate
+chunk. Each also fetches its own bff resource independently, on mount
+(`fetchVehicle()` / `fetchPolicy()` in `host-shell/src/bff.ts`), rather than the shell
+fetching the whole journey up front: `/vehicle` never waits on account data it does not
+need. One session is still shared between them (`bff.ts`'s own memoised
+`sessionPromise`), so this costs no extra `POST /auth/session` calls.
+
 The three frontend apps use `ts-loader` through webpack. `bff` runs off its TypeScript
 source directly via `ts-node`, no build step in dev; `npm run build` in `bff/` exists
 for a later deploy stage but nothing here depends on it yet. Tests run on Vitest from
@@ -83,6 +91,7 @@ npm run measure:shared  # bytes on disk per sharing mode
 npm run measure:runtime # bytes fetched for the whole journey, React copies, per mode
 npm run measure:bff     # bff round trips, before and after aggregation; cache proof
 npm run measure:axe     # axe, isolated vs composed, for each remote's route
+npm run measure:lazy    # time to interactive per route, eager vs lazy bff fetching
 npm run test:e2e        # Playwright suite against the composed page, incl. axe gate
 npm run serve:dist      # serve the production builds on the real ports
 ```
@@ -91,11 +100,24 @@ The measurement scripts drive headless Chromium through Playwright, pinned to 1.
 because later versions need Node 20 and this machine has Node 18. `MFE_SHARED`
 switches the shared-module map (`all`, `no-ui`, `dup-react`, `none`); `BFF_MODE`
 switches whether `host-shell` calls the bff's aggregator or its two downstream
-endpoints directly (`aggregated`, `split`). Everything except `all`/`aggregated` is a
-deliberately broken build, and the scripts always leave the real configuration built
-last. `measure:bff` and `measure:axe` also start and stop a real `bff` process via
-`ts-node`, not `tsx`: `tsx`'s own config-loading code calls `Array.prototype.toReversed`,
-an ES2023 method this machine's Node 18 does not have.
+endpoints directly (`aggregated`, `split`), and only matters when `LAZY_MODE=eager`;
+`LAZY_MODE` switches whether the host fetches per route, on demand (`lazy`, the real
+configuration) or fetches the whole journey up front and gates both routes on it
+(`eager`, Stage 2/3's shape). Everything except `all`/`aggregated`/`lazy` is a
+deliberately broken build. Every script except `measure:bff` leaves the real
+configuration built last by construction (it is just the last mode in its own list);
+`measure:bff` forces `LAZY_MODE=eager` throughout its own comparison and explicitly
+rebuilds with no overrides as its last step to put the real configuration back.
+`measure:bff`, `measure:axe` and `measure:lazy` also start and stop a real `bff`
+process via `ts-node`, not `tsx`: `tsx`'s own config-loading code calls
+`Array.prototype.toReversed`, an ES2023 method this machine's Node 18 does not have.
+
+Both `BFF_MODE` and `LAZY_MODE` are read in `bff.ts` via `process.env.X`, not a bare
+DefinePlugin global: a bare `declare const` throws a `ReferenceError` the moment
+something imports `bff.ts` without webpack (`host-shell/src/bff.test.ts` does exactly
+that). `process.env.X` is DefinePlugin's conventional target, webpack still inlines it
+as a literal, and Node's real `process.env` just answers `undefined` for the same key
+under Vitest.
 
 `npm run test:e2e` is the separate runner Stage 2 added (`@playwright/test`, also
 pinned at 1.52.0 to match). Its config's `webServer` runs
@@ -187,14 +209,21 @@ saving is per remote, not fixed, since `split` mode adds one request per remote 
 `aggregated` adds none. A bff outage degrades to each remote's own standalone
 defaults rather than losing the page, the same shape as a dead remote in Stage 0.
 
-### Stage 4: lazy loading and code splitting
+### Stage 4: lazy loading and code splitting. DONE
 
-- Route-level splitting in the shell, remotes loaded on demand. The routes already
-  exist (`/vehicle`, `/cover`, Stage 2) and each already loads only its own remote;
-  what is still eager is the BFF journey fetch gating both routes on one call before
-  either mounts (`App.tsx`'s `journey === 'pending'` check), which is worth revisiting
-  here.
-- **Measure:** time to interactive with everything eager versus lazy.
+`VehicleStep.tsx`/`CoverStep.tsx` are `React.lazy`-imported from `App.tsx`, so each
+route's own code (including its `loadRemote()` call) is a separate chunk. Each fetches
+its own bff resource on mount (`fetchVehicle()`/`fetchPolicy()`), instead of the shell
+fetching the whole journey up front and gating both routes on it, with one session
+still shared between them. `LAZY_MODE` (`lazy`/`eager`) switches between the two for
+`npm run measure:lazy`, which left `BFF_MODE`'s own comparison (Stage 3) intact by
+forcing `LAZY_MODE=eager` for that one script.
+
+Headline: the saving is asymmetric. `/vehicle` is faster under `lazy` (not held up by
+account's slower downstream call any more); `/cover` is not, because account was
+already the slower half of the aggregated call either way. A full journey costs one
+more bff request under `lazy` (3 vs 2), which is Stage 3's own saving partially
+reopened, in exchange for not blocking the first route on data it may never need.
 
 ### Stage 5: optional, in value order
 
@@ -270,3 +299,27 @@ exists:
     no longer be true. The fix was per script; the lesson is that a script's own
     assumptions about the page need to be checked whenever the page's shape changes,
     not just whenever the script itself changes.
+13. **Aggregating two calls into one only helps the resource that was already fast.**
+    `/journey` always costs max(vehicle, account), not either one alone. Fetching per
+    route instead only speeds up the route asking for the faster resource; the route
+    asking for the slower one was never held up by aggregation, because it was always
+    going to wait that long regardless. A single "lazy is faster" headline would have
+    hidden that the win belongs to one route and not the other.
+14. **Lazy per-route fetching reopens the exact round trip aggregation spent a stage
+    saving.** A full journey costs 3 bff requests under `lazy`, 2 under `eager`. Neither
+    number is simply better: `eager` is cheaper per request but slower for whichever
+    route loads first; `lazy` is faster per route but assumes the user visits both.
+    `lazy` is still the better default because most of a funnel's traffic is one step
+    visited, not a completed journey, but it is a trade, not a strict improvement.
+15. **A bare DefinePlugin global cannot survive being imported outside webpack.**
+    `BFF_MODE` as a `declare const` worked until the first test (`bff.test.ts`) tried to
+    import `bff.ts` directly, and threw `ReferenceError: BFF_MODE is not defined`. The
+    conventional `process.env.X` target works under both: webpack inlines it as a
+    literal, Node's real `process.env` answers `undefined` for the same key otherwise.
+16. **`networkidle` assumes one request chain, and breaks once there are two
+    independent ones.** Clicking into a route whose own fetch can still be racing the
+    previous route's gave `networkidle` a false "quiet" window between the two, before
+    the second route's data had arrived. It had no symptom until a byte-measurement
+    script's "both routes rendered" column read "no" for configurations that actually
+    worked. Waiting for the element the fetch produces, not a network-quiet heuristic,
+    is the fix, and it is a fix the whole repo needed, not just the new script.

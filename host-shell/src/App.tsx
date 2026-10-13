@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { VehicleStep } from './VehicleStep'
-import { CoverStep } from './CoverStep'
-import { fetchJourney, type JourneyData } from './bff'
 import './tokens.css'
 import './shell.css'
+
+// Each route's own code, including its loadRemote() call, is a separate
+// chunk: visiting /vehicle does not download the JS that knows how to load
+// remote_account, and vice versa. Combined with Stage 4's per-route bff
+// fetches (see VehicleStep.tsx, CoverStep.tsx), neither route's time to
+// interactive depends on anything the other route needs.
+const VehicleStep = lazy(() =>
+  import('./VehicleStep').then((m) => ({ default: m.VehicleStep })),
+)
+const CoverStep = lazy(() => import('./CoverStep').then((m) => ({ default: m.CoverStep })))
 
 const STEPS = [
   { label: 'Vehicle', to: '/vehicle' },
@@ -12,34 +19,9 @@ const STEPS = [
   { label: 'Cover', to: '/cover' },
 ] as const
 
-// 'pending' while the BFF call is in flight. null once it has failed: the
-// remotes still mount, with no initial props, and fall back to the same
-// defaults they would use standalone. A BFF outage costs this stage's
-// enhancement, not the page, the same shape as a dead remote in Stage 0.
-type JourneyState = JourneyData | null | 'pending'
-
 export function App() {
   const [excess, setExcess] = useState<string | null>(null)
-  const [journey, setJourney] = useState<JourneyState>('pending')
   const location = useLocation()
-
-  useEffect(() => {
-    let cancelled = false
-    fetchJourney()
-      .then((data) => {
-        if (!cancelled) setJourney(data)
-      })
-      .catch((error: unknown) => {
-        console.error(
-          '[shell] bff journey fetch failed, remotes will use their own defaults',
-          error,
-        )
-        if (!cancelled) setJourney(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   return (
     <>
@@ -77,9 +59,7 @@ export function App() {
             same thing at different levels for no reason. */}
         <h1>Get a quote</h1>
 
-        {journey === 'pending' ? (
-          <p className="loading">Fetching your journey…</p>
-        ) : (
+        <Suspense fallback={<p className="loading">Loading…</p>}>
           <Routes>
             <Route path="/" element={<Navigate to="/vehicle" replace />} />
             <Route
@@ -90,7 +70,7 @@ export function App() {
                     The shell owns this page. The form below is served by a
                     separate application and composed in at runtime.
                   </p>
-                  <VehicleStep initialVehicle={journey?.vehicle} />
+                  <VehicleStep />
                 </>
               }
             />
@@ -102,12 +82,12 @@ export function App() {
                     The shell owns this page too. It carried your vehicle
                     forward from the last step in the URL, not in memory.
                   </p>
-                  <CoverStep initialPolicy={journey?.policy} onExcessChange={setExcess} />
+                  <CoverStep onExcessChange={setExcess} />
                 </>
               }
             />
           </Routes>
-        )}
+        </Suspense>
 
         {excess && (
           <p className="result" role="status">

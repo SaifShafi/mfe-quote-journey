@@ -37,7 +37,15 @@ function buildRemotesOnce() {
 }
 
 function buildHost(mode) {
-  run('npm', ['--workspace', 'host-shell', 'run', 'build'], { BFF_MODE: mode })
+  // Stage 4 made 'lazy' the default LAZY_MODE, under which BFF_MODE has no
+  // effect at all: a lazy route never calls /journey, so split vs aggregated
+  // is not a question it faces. This comparison is specifically about what
+  // happens when something DOES call /journey, so it forces LAZY_MODE=eager
+  // regardless of what the rest of the build defaults to.
+  run('npm', ['--workspace', 'host-shell', 'run', 'build'], {
+    BFF_MODE: mode,
+    LAZY_MODE: 'eager',
+  })
 }
 
 function serveStatic() {
@@ -163,3 +171,11 @@ console.log()
 console.log(
   `Aggregation saves ${split.bffRequests.length - aggregated.bffRequests.length} round trip(s) to the bff.`,
 )
+
+// Every other measurement script leaves the real configuration built last by
+// construction (it is just the last mode in its own MODES list). This one
+// forces LAZY_MODE=eager throughout, on a dimension it is not testing, so it
+// has to put that back explicitly rather than leaving host-shell built in a
+// mode nothing else in the repo defaults to.
+process.stderr.write('restoring the real build (no overrides)\n')
+run('npm', ['--workspace', 'host-shell', 'run', 'build'])

@@ -11,6 +11,13 @@ const deps = require('./package.json').dependencies
 // per mode and compare round trips. See host-shell/src/bff.ts.
 const BFF_MODE = process.env.BFF_MODE === 'split' ? 'split' : 'aggregated'
 
+// Stage 4's: 'lazy' (the real configuration) fetches each route's own
+// resource independently; 'eager' reproduces the Stage 2/3 shape, one
+// aggregated call blocking whichever route loads first on both resources.
+// scripts/measure-lazy.mjs rebuilds the host in both to measure the
+// difference in time to interactive.
+const LAZY_MODE = process.env.LAZY_MODE === 'eager' ? 'eager' : 'lazy'
+
 module.exports = {
   entry: './src/index.ts',
   output: {
@@ -52,6 +59,13 @@ module.exports = {
       shared: sharedModules(deps),
     }),
     new HtmlWebpackPlugin({ template: './public/index.html' }),
-    new webpack.DefinePlugin({ BFF_MODE: JSON.stringify(BFF_MODE) }),
+    // process.env.X rather than a bare global: bff.ts reads these the same
+    // way whether webpack has inlined them or Node's real process.env is
+    // answering (undefined, safely, under Vitest). A bare custom global would
+    // throw a ReferenceError the moment a test imported bff.ts directly.
+    new webpack.DefinePlugin({
+      'process.env.BFF_MODE': JSON.stringify(BFF_MODE),
+      'process.env.LAZY_MODE': JSON.stringify(LAZY_MODE),
+    }),
   ],
 }

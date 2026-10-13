@@ -7,8 +7,8 @@ backend-for-frontend in front of it.
 Built to learn the architecture by running it. Every number below comes from a
 command in this README.
 
-**Status: Stage 2.** The shell has real routes, a deliberate piece of journey state
-crosses one in the URL, and axe runs against both the isolated and composed page. See
+**Status: Stage 4.** Each route fetches only the data it needs, when it is actually
+visited, and the shell's own route code is split the same way. See
 [Roadmap](#roadmap).
 
 ## Why a quote journey
@@ -104,11 +104,24 @@ grep -rl "accessToken" remote-quote/dist/ remote-account/dist/   # no output
 grep -rl "accessToken" host-shell/dist/                          # matches
 ```
 
-The host calls the bff and holds the token in `fetchJourney`'s own call stack; a
-remote only ever receives the vehicle and policy data that call resolved to, as plain
-props. This is the Stage 3 analogue of the Stage 0/1 bundle checks: the host's code
-can be read for what it imports, but what a remote never receives has to be proven by
-grepping for its absence.
+The host calls the bff and holds the token inside `host-shell/src/bff.ts`'s own
+module scope; a remote only ever receives the vehicle or policy data that call
+resolved to, as a plain prop. This is the Stage 3 analogue of the Stage 0/1 bundle
+checks: the host's code can be read for what it imports, but what a remote never
+receives has to be proven by grepping for its absence.
+
+**5. The shell's own route code is split too, not just the remotes'.**
+
+```bash
+npm run build
+grep -l "Fetching your vehicle" host-shell/dist/*.js  # one chunk
+grep -l "Fetching your policy" host-shell/dist/*.js   # a different chunk
+```
+
+`VehicleStep.tsx` and `CoverStep.tsx` are each `React.lazy`-imported from `App.tsx`
+(Stage 4), so the code that knows how to load `remote_quote` and the code that knows
+how to load `remote_account` are never in the same file the browser downloads.
+Visiting `/vehicle` never fetches the chunk that only `/cover` needs, and vice versa.
 
 ## What the federated singleton actually buys
 
@@ -135,12 +148,12 @@ npm run measure:shared
 
 | MFE_SHARED | What is shared | host-shell | remote-quote | remote-account | Total JS on disk | vs nothing shared |
 |---|---|---|---|---|---|---|
-| `none` | Nothing shared | 181.5 KB | 175.4 KB | 175.2 KB | 532.1 KB | 0.0 KB |
-| `dup-react` | React shared but not a singleton | 194.0 KB | 181.0 KB | 180.8 KB | 555.8 KB | +23.7 KB |
-| `no-ui` | React a singleton, shared-ui duplicated | 184.7 KB | 175.7 KB | 175.4 KB | 535.8 KB | +3.7 KB |
-| `all` | React and shared-ui singletons | 193.6 KB | 180.1 KB | 179.8 KB | 553.5 KB | +21.4 KB |
+| `none` | Nothing shared | 187.8 KB | 175.4 KB | 175.2 KB | 538.5 KB | 0.0 KB |
+| `dup-react` | React shared but not a singleton | 197.2 KB | 181.0 KB | 180.8 KB | 559.0 KB | +20.5 KB |
+| `no-ui` | React a singleton, shared-ui duplicated | 191.0 KB | 175.7 KB | 175.4 KB | 542.2 KB | +3.7 KB |
+| `all` | React and shared-ui singletons | 196.8 KB | 180.1 KB | 179.8 KB | 556.7 KB | +18.3 KB |
 
-Sharing makes the build **bigger**, by 21.4 KB. That is not a mistake in the
+Sharing makes the build **bigger**, by 18.3 KB. That is not a mistake in the
 measurement. A webpack singleton still emits a fallback copy of every shared module
 into every participant's output, plus the version-negotiation runtime, because any one
 of them might be loaded standalone or might be the first to load. Three copies of
@@ -168,17 +181,20 @@ response bodies rather than guessing from chunk names.
 
 | MFE_SHARED | What is shared | host-shell | remote-quote | remote-account | JS fetched | vs nothing shared | react | react-dom | Both routes rendered |
 |---|---|---|---|---|---|---|---|---|---|
-| `none` | Nothing shared | 181.5 KB | 19.4 KB | 19.2 KB | 220.1 KB | 0.0 KB | 3 | 1 | no |
-| `dup-react` | React shared but not a singleton | 46.4 KB | 156.5 KB | 12.6 KB | 215.4 KB | -4.7 KB | 1 | 1 | yes |
-| `no-ui` | React a singleton, shared-ui duplicated | 48.7 KB | 151.9 KB | 15.8 KB | 216.5 KB | -3.6 KB | 1 | 1 | yes |
-| `all` | React and shared-ui singletons | 45.9 KB | 156.0 KB | 12.1 KB | 214.1 KB | -6.0 KB | 1 | 1 | yes |
+| `none` | Nothing shared | 187.8 KB | 19.4 KB | 19.2 KB | 226.4 KB | 0.0 KB | 3 | 1 | no |
+| `dup-react` | React shared but not a singleton | 49.5 KB | 156.5 KB | 12.6 KB | 218.6 KB | -7.8 KB | 1 | 1 | yes |
+| `no-ui` | React a singleton, shared-ui duplicated | 55.1 KB | 151.9 KB | 15.8 KB | 222.9 KB | -3.6 KB | 1 | 1 | yes |
+| `all` | React and shared-ui singletons | 49.1 KB | 156.0 KB | 12.1 KB | 217.2 KB | -9.2 KB | 1 | 1 | yes |
 
-**The byte saving is 2.4 KB** (`216.5 - 214.1`), which is `no-ui` minus `all`: one fewer
-copy of `shared-ui` fetched across the whole two-step journey. That is the honest
-answer to "what does the shared package buy in bytes" at this size, and it is close to
-nothing. `shared-ui` is three components. The saving is per extra remote, so it scales
-with the number of teams and with the size of the design system, and it is a real
-number rather than a large one.
+**The byte saving is 5.7 KB** (`222.9 - 217.2`), which is `no-ui` minus `all`: one fewer
+copy of `shared-ui` fetched across the whole two-step journey. Bigger than Stage 2's own
+reading of this number (2.4 KB), because Stage 4's own code splitting changed how much
+of `host-shell`'s bundle loads at all before `/cover` is reached, which shifts chunk
+boundaries this comparison is sensitive to. That is the honest answer to "what does the
+shared package buy in bytes" at this size, still closer to nothing than to a lot:
+`shared-ui` is three components. The saving is per extra remote, so it scales with the
+number of teams and with the size of the design system, and it is a real number rather
+than a large one.
 
 Two details in that table are worth more than the byte column.
 
@@ -270,7 +286,11 @@ npm run measure:bff
 Rebuilds `host-shell` twice with `BFF_MODE` baked in by webpack's `DefinePlugin`, the
 same switch Stage 1 uses for `MFE_SHARED`: `split` calls the two downstream endpoints
 the host would have to call directly without an aggregator; `aggregated` calls
-`/journey` once. Both are measured against a live bff, not a static mock.
+`/journey` once. Both are measured against a live bff, not a static mock. Stage 4 added
+a second switch, `LAZY_MODE`, and this comparison only means anything when it is
+`eager` (the shape where something calls `/journey` at all), so the script forces it;
+see [what fetching per route costs and buys](#what-fetching-per-route-costs-and-buys)
+below.
 
 | BFF_MODE | What it does | Requests to the bff | Round trips | Wall clock |
 |---|---|---|---|---|
@@ -305,13 +325,14 @@ again, and that the cache expires on schedule.
 ### A BFF outage is additive, not load-bearing
 
 Kill the bff (`lsof -ti:4000 | xargs kill`) and visit either route. Both `/vehicle` and
-`/cover` still render, with the same defaults their remote would use standalone:
-`App.tsx` treats the BFF call as an enhancement and mounts whichever remote the route
-calls for with no initial props at all if it fails, which is the one case where a
-remote's own built-in stub data is not just a standalone convenience but the real
-fallback path. The console carries the error (`[shell] bff journey fetch failed,
-remotes will use their own defaults`); the page does not. Same shape as a dead remote
-in Stage 0, one layer further out.
+`/cover` still render, with the same defaults their remote would use standalone: each
+step component (`VehicleStep.tsx`, `CoverStep.tsx`) treats its own bff call as an
+enhancement and mounts its remote with no initial prop at all if that call fails, which
+is the one case where a remote's own built-in stub data is not just a standalone
+convenience but the real fallback path. The console carries the error (`[shell] bff
+vehicle fetch failed, remote will use its own defaults`, or the policy equivalent on
+`/cover`); the page does not. Same shape as a dead remote in Stage 0, one layer further
+out.
 
 `initialVehicle` and `initialPolicy` are optional props specifically so that path
 exists: a required prop would have forced a choice between blocking the whole page on
@@ -404,6 +425,57 @@ take credit for:
 violations rather than reported. If a future change makes one of them fail, that is the
 real finding this stage was looking for, and the right response is to report it in this
 README, not loosen the assertion to make the suite pass again.
+
+## What fetching per route costs and buys
+
+Stage 4 made `VehicleStep.tsx` and `CoverStep.tsx` each `React.lazy`-imported from
+`App.tsx` (the fifth composition check above), and made each one fetch its own bff
+resource independently, on mount, rather than the shell fetching the whole aggregated
+journey up front and gating both routes on it. `host-shell/src/bff.ts` still holds
+both approaches, switched by `LAZY_MODE`:
+
+| Mode | What it does |
+|---|---|
+| `lazy` | the real configuration: each route calls its own `/downstream/*` endpoint |
+| `eager` | Stage 2/3's shape: one `/journey` call, kicked off by whichever route asks first, that both routes wait on |
+
+```bash
+npm run measure:lazy
+```
+
+Rebuilds `host-shell` in both modes and measures, cold, with a live bff: time to
+interactive for `/vehicle` visited alone, for `/cover` visited alone (a deep link,
+nothing else loaded first), and the total bff requests for a full two-route journey.
+
+| LAZY_MODE | /vehicle alone TTI | /vehicle alone bff calls | /cover alone TTI | /cover alone bff calls |
+|---|---|---|---|---|
+| `eager` | 218ms | 2 (session, journey) | 304ms | 2 (session, journey) |
+| `lazy` | 199ms | 2 (session, vehicle) | 299ms | 2 (session, account) |
+
+| LAZY_MODE | Full journey (both routes) bff requests |
+|---|---|
+| `eager` | 2 (session, journey) |
+| `lazy` | 3 (session, vehicle, account) |
+
+**The win is asymmetric, and the asymmetry is the finding.** Vehicle's own downstream
+call takes 120ms; account's takes 150ms, because that is how `bff/src/downstream/`
+was seeded in Stage 3. Under `eager`, visiting `/vehicle` still waits on `/journey`,
+which waits on the *slower* of the two calls regardless of which one `/vehicle`
+actually needs. Under `lazy`, `/vehicle` waits on exactly its own 120ms. That gap
+(roughly 20-40ms across repeated runs on this machine, noisy but consistently in
+`lazy`'s favour) is the real saving. `/cover` sees almost nothing, because account was
+already the slower call inside the aggregated response too: aggregation never cost
+`/cover` anything, it only ever cost `/vehicle`, and only because `/vehicle` happened
+to be the faster of the two resources sharing one call.
+
+**It costs one request.** A full journey makes 3 bff requests under `lazy` against 2
+under `eager`, re-opening exactly the round trip Stage 3 spent a whole stage saving.
+That is a genuine trade-off, not a strict win, and it is why `lazy` is still the
+better default rather than an obviously better one: most of this journey's cost is a
+user who visits one route and leaves, not one who completes both, and `eager` makes
+that single visit slower so that a two-route visit can be one request cheaper. `bff.ts`
+keeps both switches live specifically so this trade-off stays reproducible rather than
+becoming an assertion nobody can re-check.
 
 ## Notes from building it
 
@@ -541,6 +613,38 @@ is difficult:
   `shared-ui` rather than into each remote, and the route split meaning no page ever
   mounts two remotes at once any more), not to go looking for a violation to make the
   prediction true.
+- **Aggregation's saving is asymmetric once two resources have different costs.**
+  `/journey` waits on the slower of two downstream calls (account, 150ms) no matter
+  which one a route actually needs. Fetching per route only helps the route asking for
+  the *faster* resource; the route asking for the slower one was never held up by
+  aggregation in the first place, because it was always going to wait that long. A
+  single eager-vs-lazy number would have hidden that the saving belongs to one route
+  and not the other.
+- **One session, many independent fetchers, needs memoisation or you double the
+  session calls.** `VehicleStep` and `CoverStep` each call their own fetch function
+  with no knowledge of the other, which is the whole point of fetching per route. Left
+  alone, that means each one calling `POST /auth/session` for itself. `bff.ts` holds
+  one `sessionPromise` for the module's lifetime; whichever route asks first starts it,
+  and every later caller, on either route, awaits the same one.
+- **A bare DefinePlugin global cannot be imported outside webpack.** `BFF_MODE` was a
+  `declare const` substituted at build time, which worked until `bff.test.ts` tried to
+  import `bff.ts` directly under Vitest and hit a `ReferenceError`: the identifier
+  genuinely does not exist unless webpack has run. Switched both `BFF_MODE` and the new
+  `LAZY_MODE` to `process.env.X`, DefinePlugin's conventional target. Webpack still
+  inlines it as a literal; Node's real `process.env` just answers `undefined` for the
+  same key when nothing has inlined it, which is the behaviour a test needs and a bare
+  global cannot give it.
+- **`networkidle` is not a reliable signal once two fetches can race across a
+  navigation.** Two measurement scripts clicked the "Cover" nav link and waited for
+  `networkidle` to decide the page had settled. Under Stage 4's per-route fetching,
+  `/vehicle`'s own fetch can still be resolving when that click happens, and the gap
+  between it finishing and `/cover`'s starting can look like 500ms of quiet on its own,
+  so `networkidle` fired before `/cover`'s panel had actually rendered. One run showed
+  it directly: `measure-runtime`'s "both routes rendered" column read "no" for modes
+  that worked fine, because the byte count was taken before the account chunk had
+  finished loading. Fixed by waiting for the element the fetch actually produces
+  (`.account-facts` or the fallback `.panel--notice`) instead of a network-quiet
+  heuristic that assumed one request chain, not two independent ones.
 
 ## Roadmap
 
@@ -553,7 +657,7 @@ is difficult:
       measurement-script dependency, so this stage was mostly wiring a runner and a
       CI-ready suite around a tool already proven to work here.
 - [x] **Stage 3.** NestJS BFF: aggregation, caching, holds the session token
-- [ ] **Stage 4.** Lazy loading and code splitting, measured against time to interactive
+- [x] **Stage 4.** Lazy loading and code splitting, measured against time to interactive
 - [ ] **Stage 5.** Independent deploy per remote, and a deliberate version-skew failure
 
 ## Measurements
@@ -566,11 +670,11 @@ command in this file.
 | Remote code present in host bundle | None | 0 | `grep -rl` above |
 | Shell survives a dead remote | Yes, degraded panel, no uncaught error | 0 | `npm run measure:outage` |
 | One remote down costs exactly one panel | Yes, in all four outage cases | 1 | `npm run measure:outage` |
-| Total JS on disk, everything shared | 553.5 KB | 1 | `npm run measure:shared` |
-| Total JS on disk, nothing shared | 532.1 KB | 1 | `npm run measure:shared` |
-| Cost of sharing, on disk | +21.4 KB | 1 | `npm run measure:shared` |
-| JS fetched for the whole journey, everything shared | 214.1 KB | 1 | `npm run measure:runtime` |
-| What the `shared-ui` singleton saves, fetched | 2.4 KB | 1 | `npm run measure:runtime` |
+| Total JS on disk, everything shared | 556.7 KB | 1 | `npm run measure:shared` |
+| Total JS on disk, nothing shared | 538.5 KB | 1 | `npm run measure:shared` |
+| Cost of sharing, on disk | +18.3 KB | 1 | `npm run measure:shared` |
+| JS fetched for the whole journey, everything shared | 217.2 KB | 1 | `npm run measure:runtime` |
+| What the `shared-ui` singleton saves, fetched | 5.7 KB | 1 | `npm run measure:runtime` |
 | React copies fetched, everything shared | 1 | 1 | `npm run measure:runtime` |
 | React copies fetched, nothing shared | 3, and the page does not work | 1 | `npm run measure:runtime` |
 | React copies fetched, `singleton: false` | 1, and the page works | 1 | `npm run measure:runtime` |
@@ -583,7 +687,11 @@ command in this file.
 | A refresh of `/cover` keeps its vehicle context | Yes | 2 | `npm run test:e2e` |
 | axe violations, remote-quote isolated vs composed | 0 vs 0 | 2 | `npm run measure:axe` |
 | axe violations, remote-account isolated vs composed | 0 vs 0 | 2 | `npm run measure:axe` |
-| Unit tests | 57 passing | 3 | `npm test` |
+| /vehicle alone, time to interactive, eager vs lazy | 218ms vs 199ms | 4 | `npm run measure:lazy` |
+| /cover alone, time to interactive, eager vs lazy | 304ms vs 299ms | 4 | `npm run measure:lazy` |
+| bff requests, full journey, eager vs lazy | 2 vs 3 | 4 | `npm run measure:lazy` |
+| Shell's own route code genuinely split per route | Yes | 4 | `grep -l` above |
+| Unit tests | 64 passing | 4 | `npm test` |
 | Playwright e2e + axe tests | 10 passing | 2 | `npm run test:e2e` |
 
 ## AI workflow
@@ -644,6 +752,26 @@ needed:
   missing `alt`, which reported seven violations. The zero on the real pages is
   reported as a finding in the README because it survived that check, not because it
   was the first number the script produced.
+- Stage 4's first version of `measure-lazy.mjs` asserted that `lazy` must cost fewer
+  bff requests than `eager` for a single route visited alone. It failed immediately:
+  both modes make exactly one data request either way, because `/journey` is one HTTP
+  request regardless of how much work it does behind it. The assertion was testing the
+  wrong dimension. Corrected to assert on latency for the single-route case and on
+  request count only for the full-journey case, which is where that difference
+  actually is.
+- Stage 4 reused `measure-runtime.mjs` and `measure-bff.mjs`'s "click Cover, wait for
+  network idle" pattern for `measure-lazy.mjs`'s own full-journey check, before
+  realising it was the same fragile wait the Stage 4 change had just broken in the
+  other two scripts. Fixed in all three at once rather than patching the one that
+  happened to fail first.
+- Stage 2's `measure-bff.mjs` still builds `host-shell` with `BFF_MODE` forced, and
+  Stage 4 added a second switch, `LAZY_MODE`, that the split/aggregated comparison only
+  means anything under `eager`. Left alone, the script's own builds would have landed
+  on `LAZY_MODE=eager` last, silently leaving the working tree in a configuration
+  nothing else in the repo defaults to. Fixed by having the script explicitly rebuild
+  `host-shell` with no overrides as its last step, restoring the real configuration
+  after its own comparison is done, the same guarantee every other measurement script
+  gets for free by making the real mode the last one in its own list.
 
 ## Licence
 

@@ -1,7 +1,8 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { RemoteBoundary } from './RemoteBoundary'
 import { loadRemote } from './loadRemote'
+import { fetchPolicy, type Policy as PolicyData } from './bff'
 import type { Policy } from 'remote_account/PolicySummary'
 
 const PolicySummary = loadRemote<{
@@ -9,6 +10,10 @@ const PolicySummary = loadRemote<{
   initialPolicy?: Policy
   onExcessChange?: (excess: string) => void
 }>('remote_account', () => import('remote_account/PolicySummary'), 'PolicySummary')
+
+// Same shape as VehicleStep's, fetched independently: this route's time to
+// interactive does not wait on whatever /vehicle also happens to need.
+type PolicyState = PolicyData | null | 'pending'
 
 /**
  * The route for remote_account, and the other end of the boundary VehicleStep
@@ -22,15 +27,32 @@ const PolicySummary = loadRemote<{
  * threaded into a remote prop that would exist only to be displayed.
  */
 export function CoverStep({
-  initialPolicy,
   onExcessChange,
 }: {
-  initialPolicy?: Policy
   onExcessChange?: (excess: string) => void
 }) {
   const [params] = useSearchParams()
   const registration = params.get('registration')
   const year = params.get('year')
+  const [policy, setPolicy] = useState<PolicyState>('pending')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchPolicy()
+      .then((data) => {
+        if (!cancelled) setPolicy(data)
+      })
+      .catch((error: unknown) => {
+        console.error(
+          '[shell] bff policy fetch failed, remote will use its own defaults',
+          error,
+        )
+        if (!cancelled) setPolicy(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <>
@@ -46,15 +68,19 @@ export function CoverStep({
         </p>
       )}
 
-      <RemoteBoundary name="remote_account">
-        <Suspense fallback={<p className="loading">Loading your policy…</p>}>
-          <PolicySummary
-            headingLevel={2}
-            initialPolicy={initialPolicy}
-            onExcessChange={onExcessChange}
-          />
-        </Suspense>
-      </RemoteBoundary>
+      {policy === 'pending' ? (
+        <p className="loading">Fetching your policy…</p>
+      ) : (
+        <RemoteBoundary name="remote_account">
+          <Suspense fallback={<p className="loading">Loading your policy…</p>}>
+            <PolicySummary
+              headingLevel={2}
+              initialPolicy={policy ?? undefined}
+              onExcessChange={onExcessChange}
+            />
+          </Suspense>
+        </RemoteBoundary>
+      )}
     </>
   )
 }
