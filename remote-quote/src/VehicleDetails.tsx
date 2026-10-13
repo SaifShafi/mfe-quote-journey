@@ -21,12 +21,19 @@ const EMPTY: Vehicle = { registration: '', year: '', mileage: '' }
  */
 export function VehicleDetails({
   headingLevel = 2,
+  // Stage 3: seeded by the shell from the BFF's aggregated response. Read
+  // once, by useState's initializer, same as EMPTY: this is an initial value,
+  // not a controlled prop, because the shell only ever mounts this component
+  // once the fetch has settled (see host-shell/src/App.tsx), so there is no
+  // later value for a render to miss.
+  initialVehicle,
   onSubmit,
 }: {
   headingLevel?: 2 | 3 | 4
+  initialVehicle?: Vehicle
   onSubmit?: (vehicle: Vehicle) => void
 }) {
-  const [vehicle, setVehicle] = useState<Vehicle>(EMPTY)
+  const [vehicle, setVehicle] = useState<Vehicle>(initialVehicle ?? EMPTY)
 
   const set = (key: keyof Vehicle) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setVehicle((v) => ({ ...v, [key]: e.target.value }))

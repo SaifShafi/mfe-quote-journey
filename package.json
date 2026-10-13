@@ -7,10 +7,11 @@
     "shared-ui",
     "host-shell",
     "remote-quote",
-    "remote-account"
+    "remote-account",
+    "bff"
   ],
   "scripts": {
-    "start": "concurrently -n shell,quote,account -c cyan,magenta,yellow \"npm:start:shell\" \"npm:start:quote\" \"npm:start:account\"",
+    "start": "concurrently -n bff,shell,quote,account -c green,cyan,magenta,yellow \"npm:start:bff\" \"npm:start:shell\" \"npm:start:quote\" \"npm:start:account\"",
     "start:shell": "npm --workspace host-shell run start",
     "start:quote": "npm --workspace remote-quote run start",
     "start:account": "npm --workspace remote-account run start",
@@ -20,7 +21,9 @@
     "measure:shared": "node scripts/measure-shared.mjs",
     "measure:runtime": "node scripts/measure-runtime.mjs",
     "serve:dist": "node scripts/serve-dist.mjs",
-    "measure:outage": "node scripts/measure-outage.mjs"
+    "measure:outage": "node scripts/measure-outage.mjs",
+    "start:bff": "npm --workspace bff run start",
+    "measure:bff": "node scripts/measure-bff.mjs"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.5",

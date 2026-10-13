@@ -36,16 +36,23 @@ it, and publish the unflattering numbers alongside the good ones.
 ## Layout
 
 ```
-host-shell/      :3000  the shell. Owns layout, navigation, design tokens, and later the session
+host-shell/      :3000  the shell. Owns layout, navigation, design tokens, and the session
 remote-quote/    :3001  vehicle details. Own build, own server, own tests
 remote-account/  :3002  policy summary. Same
+bff/             :4000  NestJS. Aggregates both remotes' data, caches it, holds the session
 shared-ui/              button, input, panel. Federated singleton, consumed by all three
 shared-config/          the shared-module map all three webpack configs read from
 scripts/                measurement harnesses. Every number in the README comes from one
 ```
 
-All three apps use `ts-loader` through webpack. Tests run on Vitest from the workspace
-root, and are excluded from the webpack build.
+The three frontend apps use `ts-loader` through webpack. `bff` runs off its TypeScript
+source directly via `ts-node`, no build step in dev; `npm run build` in `bff/` exists
+for a later deploy stage but nothing here depends on it yet. Tests run on Vitest from
+the workspace root, and are excluded from the webpack build. That includes `bff`'s:
+Vitest transforms TypeScript with esbuild, which does not implement
+`emitDecoratorMetadata`, so every constructor Nest resolves by DI needs an explicit
+`@Inject(Service)` token rather than relying on the type alone. Without it the
+dependency is silently `undefined`, with no error at compile time or at bootstrap.
 
 `shared-ui` ships TypeScript source with no build step of its own, reached through the
 npm workspace symlink. Webpack resolves that to a real path outside `node_modules`, so
@@ -56,24 +63,30 @@ npm workspace symlink. Webpack resolves that to a real path outside `node_module
 
 ```bash
 npm install
-npm start               # all three apps
+npm start               # all four apps
 npm run start:shell     # just the shell, if the others are already running
 npm run start:quote
 npm run start:account
-npm test                # Vitest
-npm run build           # production build of all three
+npm run start:bff
+npm test                # Vitest, including bff's
+npm run build           # production build of the three frontend apps
 
 npm run measure:outage  # asserts: one remote down costs exactly one panel
 npm run measure:shared  # bytes on disk per sharing mode
 npm run measure:runtime # bytes fetched, React copies, console output per mode
+npm run measure:bff     # bff round trips, before and after aggregation; cache proof
 npm run serve:dist      # serve the production builds on the real ports
 ```
 
 The measurement scripts drive headless Chromium through Playwright, pinned to 1.52
 because later versions need Node 20 and this machine has Node 18. `MFE_SHARED`
-switches the shared-module map (`all`, `no-ui`, `dup-react`, `none`); everything
-except `all` is a deliberately broken build, and the scripts always leave `all` built
-last.
+switches the shared-module map (`all`, `no-ui`, `dup-react`, `none`); `BFF_MODE`
+switches whether `host-shell` calls the bff's aggregator or its two downstream
+endpoints directly (`aggregated`, `split`). Everything except `all`/`aggregated` is a
+deliberately broken build, and the scripts always leave the real configuration built
+last. `measure:bff` also starts and stops a real `bff` process via `ts-node`, not
+`tsx`: `tsx`'s own config-loading code calls `Array.prototype.toReversed`, an ES2023
+method this machine's Node 18 does not have.
 
 ## The three checks that prove composition is real
 
@@ -87,13 +100,15 @@ grep -rl "Your current policy" host-shell/dist/       # must find nothing
 grep -rl "Year of manufacture" remote-quote/dist/     # must find something
 grep -rl "Your current policy" remote-account/dist/   # must find something
 grep -roh "localhost:300[12]/remoteEntry.js" host-shell/dist/ | sort -u
+grep -rl "accessToken" remote-quote/dist/ remote-account/dist/   # must find nothing
 ```
 
 Then the behavioural one, now automated and asserting: `npm run measure:outage`. It
 exits non-zero if any outage case loses the shell, raises an uncaught error, or
 degrades a panel belonging to a remote that is still up. By hand the Stage 0 version
 still works: `lsof -ti:3001 | xargs kill`, reload `:3000`, restart with
-`npm run start:quote`.
+`npm run start:quote`. Killing `bff` (`lsof -ti:4000 | xargs kill`) and reloading is
+the Stage 3 version: both panels still render, from each remote's own defaults.
 
 **Note for agents:** the dev servers read `tsconfig` once at startup. After changing any
 tsconfig or webpack config, restart them or you will debug a stale compile.
@@ -135,17 +150,19 @@ landmarks, heading order across boundaries, and focus order between modules. Dup
 IDs are already guarded in `host-shell/src/composition.test.tsx`, so a Stage 2 run that
 finds them means the guard is wrong.
 
-### Stage 3: NestJS backend-for-frontend
+### Stage 3: NestJS backend-for-frontend. DONE
 
-- `bff/` on `:4000`. Aggregates what the journey needs so the page does not make one
-  round trip per remote.
-- Caches the aggregated response.
-- Holds the session. No remote holds a token. Refresh token in an httpOnly cookie,
-  short-lived access tokens to the browser.
-- Keep business rules out of it. It is a client-shaping layer, not a second backend.
+`bff/` on `:4000` aggregates vehicle and policy data behind `GET /journey`, caches the
+aggregated response by session subject, and holds the session: a short-lived JWT
+access token to the browser, a long-lived httpOnly refresh token scoped to
+`/auth/refresh`, rotated on every use. No remote holds either; the shell is the bff's
+only caller and hands remotes resolved data as props. Round-trip measurement, cache
+proof and the boundary note are all in the README, each with its command.
 
-Acceptance: a measurement of round trips before and after aggregation, and a note on
-where the BFF boundary was drawn and why.
+Headline: aggregation saves one round trip per page load today (3 to 2), and the
+saving is per remote, not fixed, since `split` mode adds one request per remote while
+`aggregated` adds none. A bff outage degrades to each remote's own standalone
+defaults rather than losing the page, the same shape as a dead remote in Stage 0.
 
 ### Stage 4: lazy loading and code splitting
 
@@ -197,3 +214,17 @@ exists:
    served from `remote-quote` in every working mode, because `remote-quote` sorts after
    `host-shell`. The host's framework arrives from a remote, and nothing in the host's
    config says so.
+8. **Aggregation's saving is per remote, not fixed.** Splitting costs one request per
+   remote plus one for the session; aggregating costs one request for the session and
+   one for `/journey` regardless of how many remotes feed it. Today that is 3 requests
+   against 2. A third remote would make it 4 against 2.
+9. **A BFF outage is an enhancement failing, not a dependency failing, and only because
+   it was built that way.** `initialVehicle`/`initialPolicy` are optional, and the shell
+   mounts each remote with none at all if its own fetch to the bff fails, so the remote
+   falls back to the same default it uses standing alone. A required prop would have
+   made the bff load-bearing by construction.
+10. **Nest's DI needs `emitDecoratorMetadata`, and Vitest's esbuild transform does not
+    produce it.** Every injected dependency silently resolved to `undefined`, with no
+    error at compile time or at bootstrap, only the first time a handler touched it.
+    Explicit `@Inject(Service)` tokens fix it and do not depend on that compiler output,
+    so they behave the same under Vitest and under `ts-node`.

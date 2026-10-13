@@ -9,9 +9,12 @@ export interface Policy {
   excess: string
 }
 
-// Stub data. Stage 3 replaces this with one aggregated call to the BFF, which
-// is where the round-trip measurement comes from.
-const POLICY: Omit<Policy, 'excess'> = {
+// Stub data, now specifically the FALLBACK: what this remote shows if it is
+// ever mounted standalone, or if the shell's call to the BFF failed and it
+// was mounted with no initialPolicy at all. The real Stage 3 data comes from
+// one aggregated call to the BFF, made by the shell; see initialPolicy below
+// and host-shell/src/bff.ts for the round-trip measurement that call enables.
+const DEFAULT_POLICY: Omit<Policy, 'excess'> = {
   reference: 'QJ-4417-02',
   cover: 'Comprehensive',
   renewal: '14 March 2027',
@@ -30,12 +33,19 @@ const DEFAULT_EXCESS = '250'
  */
 export function PolicySummary({
   headingLevel = 2,
+  // Stage 3: seeded by the shell from the BFF's aggregated response. Read
+  // once via useState's initializer, same reasoning as VehicleDetails: the
+  // shell only mounts this component after its fetch has settled, so there
+  // is never a later value for a render to miss.
+  initialPolicy,
   onExcessChange,
 }: {
   headingLevel?: 2 | 3 | 4
+  initialPolicy?: Policy
   onExcessChange?: (excess: string) => void
 }) {
-  const [excess, setExcess] = useState(DEFAULT_EXCESS)
+  const policy = initialPolicy ?? DEFAULT_POLICY
+  const [excess, setExcess] = useState(initialPolicy?.excess ?? DEFAULT_EXCESS)
 
   return (
     <Panel heading="Your current policy" headingLevel={headingLevel}>
@@ -43,11 +53,11 @@ export function PolicySummary({
 
       <dl className="account-facts">
         <dt>Policy reference</dt>
-        <dd>{POLICY.reference}</dd>
+        <dd>{policy.reference}</dd>
         <dt>Cover level</dt>
-        <dd>{POLICY.cover}</dd>
+        <dd>{policy.cover}</dd>
         <dt>Renews</dt>
-        <dd>{POLICY.renewal}</dd>
+        <dd>{policy.renewal}</dd>
       </dl>
 
       <form

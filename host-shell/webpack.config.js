@@ -1,9 +1,15 @@
 const path = require('path')
+const webpack = require('webpack')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 const { ModuleFederationPlugin } = require('webpack').container
 
 const { sharedModules } = require('../shared-config/federation')
 const deps = require('./package.json').dependencies
+
+// Stage 3's measurement switch, same shape as MFE_SHARED: baked into the
+// bundle as a literal so scripts/measure-bff.mjs can rebuild the host once
+// per mode and compare round trips. See host-shell/src/bff.ts.
+const BFF_MODE = process.env.BFF_MODE === 'split' ? 'split' : 'aggregated'
 
 module.exports = {
   entry: './src/index.ts',
@@ -46,5 +52,6 @@ module.exports = {
       shared: sharedModules(deps),
     }),
     new HtmlWebpackPlugin({ template: './public/index.html' }),
+    new webpack.DefinePlugin({ BFF_MODE: JSON.stringify(BFF_MODE) }),
   ],
 }

@@ -38,4 +38,45 @@ describe('PolicySummary', () => {
       screen.getByRole('heading', { level: 3, name: 'Your current policy' }),
     ).toBeInTheDocument()
   })
+
+  // Stage 3: this is what the shell's BFF call populates, including the
+  // read-only facts, which the earlier stub data never varied.
+  it('displays the BFF-sourced policy when one is given, including the read-only facts', () => {
+    render(
+      <PolicySummary
+        initialPolicy={{
+          reference: 'ZZ-0001-00',
+          cover: 'Third party, fire and theft',
+          renewal: '1 January 2028',
+          excess: '400',
+        }}
+      />,
+    )
+    expect(screen.getByText('ZZ-0001-00')).toBeInTheDocument()
+    expect(screen.getByText('Third party, fire and theft')).toBeInTheDocument()
+    expect(screen.getByText('1 January 2028')).toBeInTheDocument()
+    expect(screen.getByLabelText('Voluntary excess')).toHaveValue('400')
+  })
+
+  it('still reports an edit made on top of the initial excess', async () => {
+    const onExcessChange = vi.fn()
+    render(
+      <PolicySummary
+        initialPolicy={{
+          reference: 'ZZ-0001-00',
+          cover: 'Third party, fire and theft',
+          renewal: '1 January 2028',
+          excess: '400',
+        }}
+        onExcessChange={onExcessChange}
+      />,
+    )
+
+    const excess = screen.getByLabelText('Voluntary excess')
+    await userEvent.clear(excess)
+    await userEvent.type(excess, '600')
+    await userEvent.click(screen.getByRole('button', { name: 'Update excess' }))
+
+    expect(onExcessChange).toHaveBeenCalledWith('600')
+  })
 })
