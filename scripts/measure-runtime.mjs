@@ -15,8 +15,9 @@
  * runtime failure, not a byte count, and the failure has to be quoted from a
  * real browser to be worth anything.
  *
- * For each mode it builds all three apps, serves the production output, loads
- * the composed page once with a cold cache, and records every response.
+ * For each mode it builds all three apps, serves the production output, and
+ * visits the whole journey with a cold cache: /vehicle, then a client-side
+ * navigation to /cover, recording every response across both.
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { join, dirname } from 'node:path'
@@ -94,14 +95,28 @@ async function measure(mode) {
   page.on('pageerror', (e) => console_.push(`pageerror: ${e.message}`))
 
   await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' })
+  const vehicle = await page.evaluate(() => !!document.querySelector('.quote-form'))
+  const vehicleDegraded = await page.evaluate(
+    () => document.querySelectorAll('.panel--notice').length,
+  )
 
-  // What a user would actually see. Both remotes render a named region; the
-  // degraded panel does not.
-  const rendered = await page.evaluate(() => ({
-    vehicle: !!document.querySelector('.quote-form'),
-    account: !!document.querySelector('.account-facts'),
-    degraded: document.querySelectorAll('.panel--notice').length,
-  }))
+  // Stage 2 split the journey into /vehicle and /cover, each mounting one
+  // remote. A full journey visits both, so this does too, navigating
+  // client-side (not a fresh page.goto) the way a real user would, which
+  // keeps host-shell's own bundle out of the second navigation's bytes and
+  // leaves only remote_account's federated chunks to be counted on top of
+  // what visiting /vehicle already fetched.
+  await page.getByRole('link', { name: 'Cover' }).click()
+  await page.waitForLoadState('networkidle')
+  const account = await page.evaluate(() => !!document.querySelector('.account-facts'))
+  const accountDegraded = await page.evaluate(
+    () => document.querySelectorAll('.panel--notice').length,
+  )
+
+  // Each check happens on the route that remote was actually mounted on;
+  // VehicleDetails is gone from the DOM by the time /cover is checked, so its
+  // own degraded count has to be captured before navigating away from it.
+  const rendered = { vehicle, account, degraded: vehicleDegraded + accountDegraded }
 
   await browser.close()
   server.kill()
@@ -136,7 +151,7 @@ const baseline = results.find((r) => r.mode === 'none').total
 
 console.log()
 console.log(
-  `| MFE_SHARED | What is shared | ${apps.join(' | ')} | JS fetched | vs nothing shared | react | react-dom | Both panels rendered |`,
+  `| MFE_SHARED | What is shared | ${apps.join(' | ')} | JS fetched | vs nothing shared | react | react-dom | Both routes rendered |`,
 )
 console.log(`|---|---|${apps.map(() => '---|').join('')}---|---|---|---|---|`)
 for (const r of results) {

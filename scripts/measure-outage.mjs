@@ -10,6 +10,12 @@
  * one panel. A single shared error boundary would cost both, and nothing in the
  * code makes that obvious.
  *
+ * Stage 2 put each remote on its own route (/vehicle, /cover), so there is no
+ * longer one page where both panels can be seen at once. This visits each
+ * route separately and checks that route's own remote degrades independently
+ * of what the OTHER remote is doing, which is the same guarantee as before,
+ * just checked in two page loads instead of one.
+ *
  * Runs against the production build, like the other measurements, with each
  * outage simulated by not starting that remote's server.
  */
@@ -43,28 +49,37 @@ function serve(down) {
   })
 }
 
+async function checkRoute(page, path, panelSelector) {
+  const uncaught = []
+  const onError = (e) => uncaught.push(e.message)
+  page.on('pageerror', onError)
+
+  await page.goto(`http://localhost:3000${path}`, { waitUntil: 'networkidle' })
+
+  const state = await page.evaluate(
+    (sel) => ({
+      shell: !!document.querySelector('.shell-header'),
+      panel: !!document.querySelector(sel),
+      degraded: document.querySelectorAll('.panel--notice').length,
+    }),
+    panelSelector,
+  )
+
+  page.off('pageerror', onError)
+  return { ...state, uncaught }
+}
+
 async function run({ label, down }) {
   const server = await serve(down)
   const browser = await chromium.launch()
   const page = await (await browser.newContext()).newPage()
 
-  const uncaught = []
-  page.on('pageerror', (e) => uncaught.push(e.message))
-
-  await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' })
-
-  const state = await page.evaluate(() => ({
-    // The shell's own content. If this is missing, a remote outage took the page.
-    shell: !!document.querySelector('.shell-header'),
-    heading: document.querySelector('h1')?.textContent ?? null,
-    vehicle: !!document.querySelector('.quote-form'),
-    account: !!document.querySelector('.account-facts'),
-    degraded: document.querySelectorAll('.panel--notice').length,
-  }))
+  const vehicle = await checkRoute(page, '/vehicle', '.quote-form')
+  const account = await checkRoute(page, '/cover?registration=AB12CDE', '.account-facts')
 
   await browser.close()
   server.kill()
-  return { label, down, state, uncaught }
+  return { label, down, vehicle, account }
 }
 
 const results = []
@@ -77,28 +92,35 @@ for (const c of CASES) {
 
 console.log()
 console.log(
-  '| Outage | Shell renders | Vehicle panel | Policy panel | Degraded panels | Uncaught page errors |',
+  '| Outage | /vehicle shell | /vehicle panel | /vehicle degraded | /cover shell | /cover panel | /cover degraded | Uncaught errors |',
 )
-console.log('|---|---|---|---|---|---|')
+console.log('|---|---|---|---|---|---|---|---|')
 for (const r of results) {
   const yn = (v) => (v ? 'yes' : 'no')
+  const uncaught = r.vehicle.uncaught.length + r.account.uncaught.length
   console.log(
-    `| ${r.label} | ${yn(r.state.shell)} | ${yn(r.state.vehicle)} | ${yn(r.state.account)} | ${r.state.degraded} | ${r.uncaught.length} |`,
+    `| ${r.label} | ${yn(r.vehicle.shell)} | ${yn(r.vehicle.panel)} | ${r.vehicle.degraded} | ${yn(r.account.shell)} | ${yn(r.account.panel)} | ${r.account.degraded} | ${uncaught} |`,
   )
 }
 console.log()
 
 // Fail the command, not just report, so this cannot rot into a number nobody reads.
-const broken = results.filter(
-  (r) =>
-    !r.state.shell ||
-    r.uncaught.length > 0 ||
-    r.state.degraded !== r.down.length ||
-    r.state.vehicle === r.down.includes('remote-quote') ||
-    r.state.account === r.down.includes('remote-account'),
-)
+const broken = results.filter((r) => {
+  const vehicleDown = r.down.includes('remote-quote')
+  const accountDown = r.down.includes('remote-account')
+  return (
+    !r.vehicle.shell ||
+    !r.account.shell ||
+    r.vehicle.uncaught.length > 0 ||
+    r.account.uncaught.length > 0 ||
+    r.vehicle.panel === vehicleDown ||
+    r.account.panel === accountDown ||
+    r.vehicle.degraded !== (vehicleDown ? 1 : 0) ||
+    r.account.degraded !== (accountDown ? 1 : 0)
+  )
+})
 if (broken.length > 0) {
   console.error('FAILED:', broken.map((r) => r.label).join(', '))
   process.exit(1)
 }
-console.log('All outage cases degrade exactly one panel per downed remote.')
+console.log('Each route degrades its own remote, and only its own remote.')

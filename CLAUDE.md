@@ -36,14 +36,21 @@ it, and publish the unflattering numbers alongside the good ones.
 ## Layout
 
 ```
-host-shell/      :3000  the shell. Owns layout, navigation, design tokens, and the session
+host-shell/      :3000  the shell. Owns layout, navigation, routing, tokens, and the session
 remote-quote/    :3001  vehicle details. Own build, own server, own tests
 remote-account/  :3002  policy summary. Same
 bff/             :4000  NestJS. Aggregates both remotes' data, caches it, holds the session
 shared-ui/              button, input, panel. Federated singleton, consumed by all three
 shared-config/          the shared-module map all three webpack configs read from
 scripts/                measurement harnesses. Every number in the README comes from one
+e2e/                     Playwright suite against the composed page, plus the axe gate
+playwright.config.ts     webServer builds and serves the production output for e2e/
 ```
+
+The shell routes with `react-router-dom`: `/vehicle` mounts `remote_quote`, `/cover`
+mounts `remote_account`. State that crosses that boundary (the submitted registration)
+goes in the URL's query string, not component state, so a deep link to `/cover` and a
+refresh of it both work. See `host-shell/src/VehicleStep.tsx` and `CoverStep.tsx`.
 
 The three frontend apps use `ts-loader` through webpack. `bff` runs off its TypeScript
 source directly via `ts-node`, no build step in dev; `npm run build` in `bff/` exists
@@ -71,10 +78,12 @@ npm run start:bff
 npm test                # Vitest, including bff's
 npm run build           # production build of the three frontend apps
 
-npm run measure:outage  # asserts: one remote down costs exactly one panel
+npm run measure:outage  # asserts: one remote down costs exactly one route
 npm run measure:shared  # bytes on disk per sharing mode
-npm run measure:runtime # bytes fetched, React copies, console output per mode
+npm run measure:runtime # bytes fetched for the whole journey, React copies, per mode
 npm run measure:bff     # bff round trips, before and after aggregation; cache proof
+npm run measure:axe     # axe, isolated vs composed, for each remote's route
+npm run test:e2e        # Playwright suite against the composed page, incl. axe gate
 npm run serve:dist      # serve the production builds on the real ports
 ```
 
@@ -84,9 +93,17 @@ switches the shared-module map (`all`, `no-ui`, `dup-react`, `none`); `BFF_MODE`
 switches whether `host-shell` calls the bff's aggregator or its two downstream
 endpoints directly (`aggregated`, `split`). Everything except `all`/`aggregated` is a
 deliberately broken build, and the scripts always leave the real configuration built
-last. `measure:bff` also starts and stops a real `bff` process via `ts-node`, not
-`tsx`: `tsx`'s own config-loading code calls `Array.prototype.toReversed`, an ES2023
-method this machine's Node 18 does not have.
+last. `measure:bff` and `measure:axe` also start and stop a real `bff` process via
+`ts-node`, not `tsx`: `tsx`'s own config-loading code calls `Array.prototype.toReversed`,
+an ES2023 method this machine's Node 18 does not have.
+
+`npm run test:e2e` is the separate runner Stage 2 added (`@playwright/test`, also
+pinned at 1.52.0 to match). Its config's `webServer` runs
+`npm run build && node scripts/serve-all.mjs`, which boots the same static servers and
+`bff` the measurement scripts use, so the suite exercises the same artifact the numbers
+in the README come from. `scripts/serve-dist.mjs` implements SPA fallback for
+`host-shell` only (`/cover` is a client route, not a file); the other two apps have no
+client-side routes and still 404 on anything that is not a real asset.
 
 ## The three checks that prove composition is real
 
@@ -103,12 +120,13 @@ grep -roh "localhost:300[12]/remoteEntry.js" host-shell/dist/ | sort -u
 grep -rl "accessToken" remote-quote/dist/ remote-account/dist/   # must find nothing
 ```
 
-Then the behavioural one, now automated and asserting: `npm run measure:outage`. It
-exits non-zero if any outage case loses the shell, raises an uncaught error, or
-degrades a panel belonging to a remote that is still up. By hand the Stage 0 version
-still works: `lsof -ti:3001 | xargs kill`, reload `:3000`, restart with
-`npm run start:quote`. Killing `bff` (`lsof -ti:4000 | xargs kill`) and reloading is
-the Stage 3 version: both panels still render, from each remote's own defaults.
+Then the behavioural one, now automated and asserting: `npm run measure:outage`. Each
+remote has its own route since Stage 2 (`/vehicle`, `/cover`), so it visits both and
+exits non-zero if either route loses the shell, raises an uncaught error, or degrades a
+route whose remote is up. By hand the Stage 0 version still works: `lsof -ti:3001 |
+xargs kill`, reload `:3000`, restart with `npm run start:quote`. Killing `bff`
+(`lsof -ti:4000 | xargs kill`) and reloading is the Stage 3 version: both routes still
+render, from each remote's own defaults.
 
 **Note for agents:** the dev servers read `tsconfig` once at startup. After changing any
 tsconfig or webpack config, restart them or you will debug a stale compile.
@@ -129,26 +147,31 @@ no uncaught error. Unit tests on the remote's form.
 consumed by all three as a federated singleton; both byte measurements and the
 duplicate-React error in the README, each with its command.
 
-Headline: sharing costs 21.4 KB on disk and saves 2.9 KB over the wire. The singleton
-is not a byte optimisation at this size. What it buys is one React and one module
-registry, and the cost of not having that is a broken page, not a slow one.
+Headline: sharing costs 21.4 KB on disk and saves 2.4 KB over the wire for the whole
+journey. The singleton is not a byte optimisation at this size. What it buys is one
+React and one module registry, and the cost of not having that is a broken page, not a
+slow one.
 
-### Stage 2: deliberate cross-remote state, and an integration stage in CI
+### Stage 2: deliberate cross-remote state, and an integration stage in CI. DONE
 
-- Routing and session in the shell. Journey state that must cross a boundary goes in the
-  URL, so a deep link and a refresh both work.
-- Playwright running against the **composed** page, not each remote alone.
-- axe run twice: against each remote in isolation, and against the shell with every
-  remote mounted. Report both numbers. Both remotes already serve a standalone page at
-  their own port for the isolated half.
-- Playwright is already installed and pinned at 1.52 (Node 18). Stage 1 uses the
-  library directly in `scripts/`; this stage adds the runner and the config.
+The shell routes with `react-router-dom`: `/vehicle` and `/cover`, one remote each.
+Submitting the vehicle step carries its registration forward in the URL's query
+string, not component state, so `/cover?registration=...` deep-links and survives a
+refresh. `e2e/composed.spec.ts` asserts the whole flow against the composed page
+through module federation, via the `@playwright/test` runner Stage 1 anticipated
+(`playwright.config.ts`, `scripts/serve-all.mjs`).
 
-Acceptance: both axe numbers in the README. If composing produces violations that
-isolated remotes do not, write that up as the finding of the stage. Expect duplicate
-landmarks, heading order across boundaries, and focus order between modules. Duplicate
-IDs are already guarded in `host-shell/src/composition.test.tsx`, so a Stage 2 run that
-finds them means the guard is wrong.
+`npm run measure:axe` runs axe against each remote standalone and against the shell
+with that remote mounted on its real route. Both numbers are zero, on every route.
+`e2e/axe.spec.ts` turns that into a CI gate at zero rather than a number to watch.
+
+Acceptance met, but the finding differs from what this section predicted: composing
+did **not** introduce violations the isolated remotes lack. Write-up and the two
+reasons (accessibility built structurally into `shared-ui` since Stage 0/1; each route
+now mounting exactly one remote, so the duplicate-ID/landmark collision this stage
+expected to find has no page left to happen on) are in the README. Duplicate IDs are
+still guarded in `host-shell/src/composition.test.tsx` for the day a page mounts two
+remotes together again.
 
 ### Stage 3: NestJS backend-for-frontend. DONE
 
@@ -166,7 +189,11 @@ defaults rather than losing the page, the same shape as a dead remote in Stage 0
 
 ### Stage 4: lazy loading and code splitting
 
-- Route-level splitting in the shell, remotes loaded on demand.
+- Route-level splitting in the shell, remotes loaded on demand. The routes already
+  exist (`/vehicle`, `/cover`, Stage 2) and each already loads only its own remote;
+  what is still eager is the BFF journey fetch gating both routes on one call before
+  either mounts (`App.tsx`'s `journey === 'pending'` check), which is worth revisiting
+  here.
 - **Measure:** time to interactive with everything eager versus lazy.
 
 ### Stage 5: optional, in value order
@@ -200,7 +227,8 @@ exists:
 4. **A federated singleton makes the build bigger, not smaller.** Every participant
    still emits a fallback copy of every shared module, so `all` costs 21.4 KB more on
    disk than `none`. The deduplication happens when the browser chooses which copy to
-   fetch, worth 2.9 KB here. A bundle-size budget in CI would read this backwards.
+   fetch, worth 2.4 KB here, for the whole two-step journey. A bundle-size budget in CI
+   would read this backwards.
 5. **Removing React from the shared map breaks the page, and the error never says
    React.** `TypeError: Cannot read properties of null (reading 'useState')`, thrown in
    the remote's bundle and called from React DOM in the host's. The null is
@@ -228,3 +256,17 @@ exists:
     error at compile time or at bootstrap, only the first time a handler touched it.
     Explicit `@Inject(Service)` tokens fix it and do not depend on that compiler output,
     so they behave the same under Vitest and under `ts-node`.
+11. **Routing removed the one page that could have shown a cross-remote violation.**
+    Stage 2 expected composing to produce axe violations isolated remotes do not have.
+    Measured, every route scored zero, matching both remotes standalone. Splitting the
+    journey into one remote per route means the two remotes are never in one DOM any
+    more, which is the specific condition duplicate-ID and duplicate-landmark checks
+    exist to catch. The prediction was reasonable; the measurement is still what
+    counts, and it said something different.
+12. **A measurement script can go stale exactly when the thing it measures changes
+    shape, and not announce it.** Three scripts assumed the shell's single composed
+    page from Stages 1 and 3. Stage 2 replaced that page with two routes, and two of
+    the three scripts kept running without erroring, just reporting a value that could
+    no longer be true. The fix was per script; the lesson is that a script's own
+    assumptions about the page need to be checked whenever the page's shape changes,
+    not just whenever the script itself changes.

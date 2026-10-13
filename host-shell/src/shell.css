@@ -47,13 +47,29 @@ body {
 }
 
 .shell-steps li {
-  padding: var(--space-1) var(--space-3);
   border-radius: 999px;
   color: var(--color-text-muted);
+}
+
+/* The li carries aria-current, since that is the semantic state of the step;
+   the a is what the pill styling and the click target both live on, so a
+   screen reader announces "current step" on the item a sighted user sees
+   highlighted, not on a parent nothing points at. */
+.shell-steps a {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  border-radius: 999px;
+  color: inherit;
+  text-decoration: none;
   border: var(--border-width) solid transparent;
 }
 
-.shell-steps li[aria-current="step"] {
+.shell-steps li[aria-disabled="true"] {
+  padding: var(--space-1) var(--space-3);
+  opacity: 0.6;
+}
+
+.shell-steps li[aria-current="step"] a {
   color: var(--color-text);
   background: var(--color-bg);
   border-color: var(--color-border);
@@ -129,6 +145,25 @@ body {
 
 .result strong {
   font-variant-numeric: tabular-nums;
+}
+
+/* The one piece of journey state the shell carries across a route boundary
+   in the URL rather than in memory. See host-shell/src/CoverStep.tsx. */
+.journey-context {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+}
+
+.journey-context--empty {
+  color: var(--color-text-muted);
+}
+
+.journey-context a {
+  color: var(--color-accent);
 }
 
 /* Marks which remote served a region. Useful while building. */

@@ -1,28 +1,16 @@
-import { Suspense, useEffect, useState } from 'react'
-import { RemoteBoundary } from './RemoteBoundary'
-import { loadRemote } from './loadRemote'
+import { useEffect, useState } from 'react'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { VehicleStep } from './VehicleStep'
+import { CoverStep } from './CoverStep'
 import { fetchJourney, type JourneyData } from './bff'
-import type { Vehicle } from 'remote_quote/VehicleDetails'
-import type { Policy } from 'remote_account/PolicySummary'
 import './tokens.css'
 import './shell.css'
 
-// One lazy component per remote, each with its own load-failure handling. See
-// loadRemote for why the rejection is caught at the import and not only in a
-// boundary.
-const VehicleDetails = loadRemote<{
-  headingLevel?: 2 | 3 | 4
-  initialVehicle?: Vehicle
-  onSubmit?: (vehicle: Vehicle) => void
-}>('remote_quote', () => import('remote_quote/VehicleDetails'), 'VehicleDetails')
-
-const PolicySummary = loadRemote<{
-  headingLevel?: 2 | 3 | 4
-  initialPolicy?: Policy
-  onExcessChange?: (excess: string) => void
-}>('remote_account', () => import('remote_account/PolicySummary'), 'PolicySummary')
-
-const STEPS = ['Vehicle', 'Driver', 'Cover'] as const
+const STEPS = [
+  { label: 'Vehicle', to: '/vehicle' },
+  { label: 'Driver', to: null },
+  { label: 'Cover', to: '/cover' },
+] as const
 
 // 'pending' while the BFF call is in flight. null once it has failed: the
 // remotes still mount, with no initial props, and fall back to the same
@@ -31,9 +19,9 @@ const STEPS = ['Vehicle', 'Driver', 'Cover'] as const
 type JourneyState = JourneyData | null | 'pending'
 
 export function App() {
-  const [submitted, setSubmitted] = useState<string | null>(null)
   const [excess, setExcess] = useState<string | null>(null)
   const [journey, setJourney] = useState<JourneyState>('pending')
+  const location = useLocation()
 
   useEffect(() => {
     let cancelled = false
@@ -61,68 +49,69 @@ export function App() {
         </div>
         <nav className="shell-steps" aria-label="Quote steps">
           <ol>
-            {STEPS.map((step, i) => (
-              <li key={step} aria-current={i === 0 ? 'step' : undefined}>
-                {step}
-              </li>
-            ))}
+            {STEPS.map((step) =>
+              step.to ? (
+                <li
+                  key={step.label}
+                  aria-current={location.pathname === step.to ? 'step' : undefined}
+                >
+                  <Link to={step.to}>{step.label}</Link>
+                </li>
+              ) : (
+                // No remote owns this step yet. Not a link: a disabled control
+                // that goes nowhere is worse for a screen reader user than a
+                // plain label, since it promises an action that does nothing.
+                <li key={step.label} aria-disabled="true">
+                  {step.label}
+                </li>
+              ),
+            )}
           </ol>
         </nav>
       </header>
 
       <main className="shell-main">
+        {/* One h1 for the whole journey, not one per step: the step below
+            already has its own heading (shared-ui's Panel), and a shell h1
+            repeating that same text would be two headings announcing the
+            same thing at different levels for no reason. */}
         <h1>Get a quote</h1>
-        <p className="shell-lede">
-          The shell owns this page. Both panels below are served by separate
-          applications and composed in at runtime.
-        </p>
 
         {journey === 'pending' ? (
           <p className="loading">Fetching your journey…</p>
         ) : (
-          <div className="shell-stack">
-            {/* The shell owns the h1, so each remote is told what level its own
-                heading sits at. A remote cannot know how deep it was mounted. */}
-            <RemoteBoundary name="remote_quote">
-              <Suspense
-                fallback={<p className="loading">Loading vehicle details…</p>}
-              >
-                <VehicleDetails
-                  headingLevel={2}
-                  initialVehicle={journey?.vehicle}
-                  onSubmit={(vehicle) => setSubmitted(vehicle.registration)}
-                />
-              </Suspense>
-            </RemoteBoundary>
-
-            {/* A second boundary, not a shared one. One boundary around both
-                remotes would mean either remote failing costs you both panels. */}
-            <RemoteBoundary name="remote_account">
-              <Suspense
-                fallback={<p className="loading">Loading your policy…</p>}
-              >
-                <PolicySummary
-                  headingLevel={2}
-                  initialPolicy={journey?.policy}
-                  onExcessChange={setExcess}
-                />
-              </Suspense>
-            </RemoteBoundary>
-          </div>
+          <Routes>
+            <Route path="/" element={<Navigate to="/vehicle" replace />} />
+            <Route
+              path="/vehicle"
+              element={
+                <>
+                  <p className="shell-lede">
+                    The shell owns this page. The form below is served by a
+                    separate application and composed in at runtime.
+                  </p>
+                  <VehicleStep initialVehicle={journey?.vehicle} />
+                </>
+              }
+            />
+            <Route
+              path="/cover"
+              element={
+                <>
+                  <p className="shell-lede">
+                    The shell owns this page too. It carried your vehicle
+                    forward from the last step in the URL, not in memory.
+                  </p>
+                  <CoverStep initialPolicy={journey?.policy} onExcessChange={setExcess} />
+                </>
+              }
+            />
+          </Routes>
         )}
 
-        {(submitted || excess) && (
+        {excess && (
           <p className="result" role="status">
-            {submitted && (
-              <>
-                Captured registration: <strong>{submitted}</strong>.{' '}
-              </>
-            )}
-            {excess && (
-              <>
-                Voluntary excess: <strong>{excess}</strong>.
-              </>
-            )}
+            Voluntary excess: <strong>{excess}</strong>.
           </p>
         )}
       </main>

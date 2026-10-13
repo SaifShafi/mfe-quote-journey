@@ -83,9 +83,11 @@ async function measureRoundTrips(mode) {
   await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' })
   const elapsedMs = Date.now() - started
 
+  // / redirects to /vehicle, the sole remote on that route since Stage 2
+  // split the journey into its own routes per remote. Whether the account
+  // panel also renders correctly is measure-outage.mjs's job, on /cover.
   const rendered = await page.evaluate(() => ({
     registration: document.querySelector('.quote-form input')?.value ?? null,
-    hasAccountPanel: !!document.querySelector('.account-facts'),
   }))
 
   await browser.close()
@@ -142,9 +144,7 @@ for (const r of results) {
 }
 console.log()
 for (const r of results) {
-  console.log(
-    `${r.mode}: registration=${r.rendered.registration} accountPanel=${r.rendered.hasAccountPanel}`,
-  )
+  console.log(`${r.mode}: registration=${r.rendered.registration}`)
 }
 
 console.log()

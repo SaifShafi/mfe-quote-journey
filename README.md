@@ -7,8 +7,9 @@ backend-for-frontend in front of it.
 Built to learn the architecture by running it. Every number below comes from a
 command in this README.
 
-**Status: Stage 3.** A NestJS backend-for-frontend aggregates what both remotes need
-into one call, caches it, and holds the session. See [Roadmap](#roadmap).
+**Status: Stage 2.** The shell has real routes, a deliberate piece of journey state
+crosses one in the URL, and axe runs against both the isolated and composed page. See
+[Roadmap](#roadmap).
 
 ## Why a quote journey
 
@@ -44,6 +45,7 @@ data as props; it never calls `:4000` and never holds the token that did. See
 npm install
 npm start          # all four apps, :3000 :3001 :3002 :4000
 npm test           # Vitest unit tests, including the bff's
+npm run test:e2e   # Playwright against the composed page, plus the axe gate
 npm run build      # production build of the three frontend apps
 ```
 
@@ -77,17 +79,19 @@ grep -roh "localhost:300[12]/remoteEntry.js" host-shell/dist/ | sort -u
 npm run measure:outage
 ```
 
-Builds for production, then loads the composed page four times: both remotes up, each
-one down, and both down. It asserts rather than reports, so it exits non-zero if any
-case loses the shell, raises an uncaught error, or degrades a panel belonging to a
-remote that is still up.
+Builds for production, then loads both routes, for each of four outage cases: both
+remotes up, each one down, and both down. Each remote now lives on its own route
+(`/vehicle`, `/cover`; see the routing section below), so the check visits both and
+confirms a downed remote degrades its own route only, regardless of what the other
+remote is doing. It asserts rather than reports, so it exits non-zero if any case
+loses the shell, raises an uncaught error, or degrades a route whose remote is up.
 
-| Outage | Shell renders | Vehicle panel | Policy panel | Degraded panels | Uncaught page errors |
-|---|---|---|---|---|---|
-| both remotes up | yes | yes | yes | 0 | 0 |
-| remote-quote down | yes | no | yes | 1 | 0 |
-| remote-account down | yes | yes | no | 1 | 0 |
-| both remotes down | yes | no | no | 2 | 0 |
+| Outage | /vehicle shell | /vehicle panel | /vehicle degraded | /cover shell | /cover panel | /cover degraded | Uncaught errors |
+|---|---|---|---|---|---|---|---|
+| both remotes up | yes | yes | 0 | yes | yes | 0 | 0 |
+| remote-quote down | yes | no | 1 | yes | yes | 0 | 0 |
+| remote-account down | yes | yes | 0 | yes | no | 1 | 0 |
+| both remotes down | yes | no | 1 | yes | no | 1 | 0 |
 
 By hand, the Stage 0 version still works: `lsof -ti:3001 | xargs kill`, reload `:3000`.
 That is the failure a real estate actually hits.
@@ -131,10 +135,10 @@ npm run measure:shared
 
 | MFE_SHARED | What is shared | host-shell | remote-quote | remote-account | Total JS on disk | vs nothing shared |
 |---|---|---|---|---|---|---|
-| `none` | Nothing shared | 158.4 KB | 174.4 KB | 174.2 KB | 507.0 KB | 0.0 KB |
-| `dup-react` | React shared but not a singleton | 171.0 KB | 180.0 KB | 179.7 KB | 530.7 KB | +23.7 KB |
-| `no-ui` | React a singleton, shared-ui duplicated | 162.0 KB | 174.7 KB | 174.4 KB | 511.1 KB | +4.1 KB |
-| `all` | React and shared-ui singletons | 170.5 KB | 179.1 KB | 178.8 KB | 528.4 KB | +21.4 KB |
+| `none` | Nothing shared | 181.5 KB | 175.4 KB | 175.2 KB | 532.1 KB | 0.0 KB |
+| `dup-react` | React shared but not a singleton | 194.0 KB | 181.0 KB | 180.8 KB | 555.8 KB | +23.7 KB |
+| `no-ui` | React a singleton, shared-ui duplicated | 184.7 KB | 175.7 KB | 175.4 KB | 535.8 KB | +3.7 KB |
+| `all` | React and shared-ui singletons | 193.6 KB | 180.1 KB | 179.8 KB | 553.5 KB | +21.4 KB |
 
 Sharing makes the build **bigger**, by 21.4 KB. That is not a mistake in the
 measurement. A webpack singleton still emits a fallback copy of every shared module
@@ -156,23 +160,25 @@ bundle-size check in CI would report, and it points the wrong way.
 npm run measure:runtime
 ```
 
-Builds each mode for production, serves all three on their real ports, and loads the
-composed page once with a cold cache in headless Chromium. The react and react-dom
-columns count copies of the implementation that were actually downloaded, found by
-string-matching the response bodies rather than guessing from chunk names.
+Builds each mode for production, serves all three on their real ports, and visits the
+whole journey with a cold cache: `/vehicle`, then a client-side navigation to `/cover`,
+the same two steps a real user takes. The react and react-dom columns count copies of
+the implementation that were actually downloaded, found by string-matching the
+response bodies rather than guessing from chunk names.
 
-| MFE_SHARED | What is shared | host-shell | remote-quote | remote-account | JS fetched | vs nothing shared | react | react-dom | Both panels rendered |
+| MFE_SHARED | What is shared | host-shell | remote-quote | remote-account | JS fetched | vs nothing shared | react | react-dom | Both routes rendered |
 |---|---|---|---|---|---|---|---|---|---|
-| `none` | Nothing shared | 158.4 KB | 19.4 KB | 19.2 KB | 197.0 KB | 0.0 KB | 3 | 1 | no |
-| `dup-react` | React shared but not a singleton | 23.3 KB | 156.5 KB | 12.6 KB | 192.4 KB | -4.6 KB | 1 | 1 | yes |
-| `no-ui` | React a singleton, shared-ui duplicated | 26.1 KB | 151.9 KB | 15.8 KB | 193.9 KB | -3.1 KB | 1 | 1 | yes |
-| `all` | React and shared-ui singletons | 22.9 KB | 156.0 KB | 12.1 KB | 191.0 KB | -6.0 KB | 1 | 1 | yes |
+| `none` | Nothing shared | 181.5 KB | 19.4 KB | 19.2 KB | 220.1 KB | 0.0 KB | 3 | 1 | no |
+| `dup-react` | React shared but not a singleton | 46.4 KB | 156.5 KB | 12.6 KB | 215.4 KB | -4.7 KB | 1 | 1 | yes |
+| `no-ui` | React a singleton, shared-ui duplicated | 48.7 KB | 151.9 KB | 15.8 KB | 216.5 KB | -3.6 KB | 1 | 1 | yes |
+| `all` | React and shared-ui singletons | 45.9 KB | 156.0 KB | 12.1 KB | 214.1 KB | -6.0 KB | 1 | 1 | yes |
 
-**The byte saving is 2.9 KB** (`193.9 - 191.0`), which is `no-ui` minus `all`: one fewer copy of
-`shared-ui` fetched. That is the honest answer to "what does the shared package buy in
-bytes" at this size, and it is close to nothing. `shared-ui` is three components. The
-saving is per extra remote, so it scales with the number of teams and with the size of
-the design system, and it is a real number rather than a large one.
+**The byte saving is 2.4 KB** (`216.5 - 214.1`), which is `no-ui` minus `all`: one fewer
+copy of `shared-ui` fetched across the whole two-step journey. That is the honest
+answer to "what does the shared package buy in bytes" at this size, and it is close to
+nothing. `shared-ui` is three components. The saving is per extra remote, so it scales
+with the number of teams and with the size of the design system, and it is a real
+number rather than a large one.
 
 Two details in that table are worth more than the byte column.
 
@@ -194,7 +200,7 @@ The error, quoted from `npm run measure:runtime`:
 TypeError: Cannot read properties of null (reading 'useState')
     at t.useState (http://localhost:3001/152.js:2:11415)
     at s (http://localhost:3001/152.js:2:15901)
-    at vo (http://localhost:3000/947.js:2:61166)
+    at vo (http://localhost:3000/396.js:2:70135)
 ```
 
 Read the origins in that stack. The failing frame is in the **remote's** bundle on
@@ -206,11 +212,11 @@ its own, and that one's dispatcher is still `null`. There is no message that say
 classic "Invalid hook call" warning looks like once it has been minified and spread
 across two origins.
 
-The chunk sizes say the rest: in `none` mode the remote fetches 19.3 KB and no vendor
-chunk at all, because webpack put React DOM in the remote's *own entry* chunk group,
-which a host consuming the container never loads. So the page runs three React cores
-against one React DOM. Removing React from the shared map does not give you a slower
-page. It gives you a broken one.
+The chunk sizes say the rest: in `none` mode remote-quote fetches 19.4 KB and no
+vendor chunk at all, because webpack put React DOM in the remote's *own entry* chunk
+group, which a host consuming the container never loads. So the page runs three React
+cores against one React DOM. Removing React from the shared map does not give you a
+slower page. It gives you a broken one.
 
 ### `singleton: false` is not the same as duplicated
 
@@ -298,19 +304,106 @@ again, and that the cache expires on schedule.
 
 ### A BFF outage is additive, not load-bearing
 
-Kill the bff (`lsof -ti:4000 | xargs kill`) and reload `:3000`. Both panels still
-render, with the same defaults they would use standalone: `App.tsx` treats the BFF
-call as an enhancement and mounts the remotes with no initial props at all if it
-fails, which is the one case where a remote's own built-in stub data is not just a
-standalone convenience but the real fallback path. The console carries the error
-(`[shell] bff journey fetch failed, remotes will use their own defaults`); the page
-does not. Same shape as a dead remote in Stage 0, one layer further out.
+Kill the bff (`lsof -ti:4000 | xargs kill`) and visit either route. Both `/vehicle` and
+`/cover` still render, with the same defaults their remote would use standalone:
+`App.tsx` treats the BFF call as an enhancement and mounts whichever remote the route
+calls for with no initial props at all if it fails, which is the one case where a
+remote's own built-in stub data is not just a standalone convenience but the real
+fallback path. The console carries the error (`[shell] bff journey fetch failed,
+remotes will use their own defaults`); the page does not. Same shape as a dead remote
+in Stage 0, one layer further out.
 
-Both remotes still mount with no initial props when the fetch fails, and each one's
-own built-in default takes over. `initialVehicle` and `initialPolicy` are optional
-props specifically so that path exists: a required prop would have forced a choice
-between blocking the whole page on the BFF or inventing a second set of placeholder
-data the shell would own instead of the remote.
+`initialVehicle` and `initialPolicy` are optional props specifically so that path
+exists: a required prop would have forced a choice between blocking the whole page on
+the BFF or inventing a second set of placeholder data the shell would own instead of
+the remote.
+
+## Cross-remote state, routing, and the accessibility comparison
+
+Stage 2 split the single composed page into real routes, `/vehicle` and `/cover`, each
+owned by the shell and each mounting exactly one remote. It is built out of order,
+after Stage 3: see [Roadmap](#roadmap) for why.
+
+### Journey state goes in the URL, not in memory
+
+Submitting the vehicle form used to just update some state the shell held. Now it
+navigates:
+
+```
+/vehicle  --submit-->  /cover?registration=AB12CDE&year=2019&mileage=8000
+```
+
+`remote_account` does not need the registration for anything it does, so it is shown
+as shell-owned context above the panel (`host-shell/src/CoverStep.tsx`) rather than
+threaded into a remote prop that would exist only to be displayed. The point of putting it in the query string rather than component state is what that
+buys, each asserted in `e2e/composed.spec.ts`:
+
+```bash
+npm run test:e2e
+```
+
+- **A deep link works without the earlier step.** `/cover?registration=AB12CDE&year=2019`
+  loaded directly renders the same context a user would see after submitting
+  `/vehicle` themselves.
+- **A refresh does not lose it.** Reloading `/cover?...` keeps the banner, because
+  nothing about it lives only in a React component that a reload would remount from
+  scratch.
+- **Visiting `/cover` with nothing crosses the boundary degrades, it does not crash.**
+  No `registration` param shows a link back to `/vehicle` instead of a blank or broken
+  context line, and the account panel still renders underneath it regardless.
+
+That suite runs against the real composed page, through module federation, not
+against the remotes' own source the way `host-shell/src/composition.test.tsx` does. It
+is also why Stage 1's
+`measure:outage`, `measure:bff` and `measure:runtime` scripts needed updating this
+stage: each assumed the old single page that mounted both remotes at once, and each
+would have silently reported the wrong thing against two separate routes instead of
+failing loudly. They now visit `/vehicle` and `/cover` as two steps, the way a real
+journey does.
+
+### axe, isolated versus composed
+
+```bash
+npm run measure:axe
+```
+
+Builds for production and runs axe against each remote standalone (its own page, no
+shell chrome, `:3001` and `:3002`) and against the shell with that remote mounted on
+its real route (`:3000/vehicle`, `:3000/cover`).
+
+| Target | Violations |
+|---|---|
+| remote-quote, standalone | 0 |
+| remote-quote, composed (shell /vehicle) | 0 |
+| remote-account, standalone | 0 |
+| remote-account, composed (shell /cover) | 0 |
+
+**The finding is that there is no finding, and that is worth taking seriously rather
+than at face value.** `CLAUDE.md`'s own Stage 2 notes predicted composing would
+introduce violations the isolated remotes do not have: duplicate landmarks, heading
+order across a boundary, focus order between modules. Measured, it did not happen, on
+either route. Two things explain it, and neither was an accident this stage gets to
+take credit for:
+
+1. **The accessibility work was structural, not incidental, from Stage 0 onward.**
+   `shared-ui`'s `Input` uses `useId` so two instances cannot collide, `Panel` takes a
+   `headingLevel` the shell supplies so a remote cannot assume it owns `<h2>`, and the
+   hint-in-a-label bug is fixed once in the package rather than per remote. Composing
+   had less room to go wrong because the primitives that could go wrong were already
+   shared.
+2. **Stage 2 itself removed the one DOM both remotes could collide in.** With each
+   remote on its own route, `remote_quote` and `remote_account` are never mounted
+   together any more, so the specific failure mode duplicate-ID and duplicate-landmark
+   checks exist to catch (two things claiming the same identity in one document) has no
+   page left to occur on. `host-shell/src/composition.test.tsx` still guards it at the
+   unit level, because a future page that does mount two remotes together (a review
+   step, say) would reintroduce exactly that risk, and the guard should already be
+   there when it does.
+
+`e2e/axe.spec.ts` turns this into a CI gate: the same four checks, asserted at zero
+violations rather than reported. If a future change makes one of them fail, that is the
+real finding this stage was looking for, and the right response is to report it in this
+README, not loosen the assertion to make the suite pass again.
 
 ## Notes from building it
 
@@ -423,17 +516,42 @@ is difficult:
   and Vitest's hook types expect `void`. `noUnusedLocals`-style strictness caught it at
   typecheck, not at the point you would reflexively look: wrapping the call in braces
   so the arrow function has no implicit return is the fix.
+- **A hand-rolled static server has to implement SPA fallback by hand.** The webpack
+  dev server's `historyApiFallback` makes `/cover` just work; `scripts/serve-dist.mjs`,
+  used for every production-build measurement, 404s on it by default, because it maps
+  a path straight to a file and `/cover` is not one. Fixed by falling back to
+  `index.html` for extensionless paths, and only for `host-shell`: the other two apps
+  have no client-side routes of their own, and an actual missing asset should still
+  404, not silently serve the shell's page.
+- **A page that always redirects to one remote is not evidence about the other.**
+  Three measurement scripts (`measure-outage`, `measure-bff`, `measure-runtime`)
+  checked `document.querySelector('.account-facts')` against `http://localhost:3000/`,
+  which is true before Stage 2 (both remotes on one page) and false after it regardless
+  of correctness (`/` now redirects to `/vehicle` alone). None of them failed loudly:
+  `measure-outage`'s assertions went red because they expected a value that could no
+  longer be true, which was at least visible, but `measure-runtime`'s rendered check
+  would have silently reported "no" forever without ever meaning anything was broken.
+  Routing is exactly the kind of change CLAUDE.md's stage list did not call out as
+  needing a script update, and it needed three.
+- **Predicting a finding and then measuring it are different exercises, and the
+  measurement is the one that counts.** `CLAUDE.md`'s Stage 2 notes expected composing
+  to introduce axe violations isolated remotes do not have. Measured, both routes
+  scored zero, same as both remotes standalone. The honest move was to report that,
+  with the two structural reasons it probably held (accessibility built into
+  `shared-ui` rather than into each remote, and the route split meaning no page ever
+  mounts two remotes at once any more), not to go looking for a violation to make the
+  prediction true.
 
 ## Roadmap
 
 - [x] **Stage 0.** Host plus one remote, composing at runtime. Vitest unit tests
 - [x] **Stage 1.** Second remote, shared component package as a federated singleton,
       duplicate-React cost measured
-- [ ] **Stage 2.** Cross-remote state handled deliberately. Playwright integration
-      stage in CI running axe against the *composed* page, not each remote alone.
-      Built out of order, after Stage 3: Playwright is already in the repo as a
-      measurement-script dependency, so this stage is mostly wiring a runner and a
-      CI job around a tool that is already proven to work here.
+- [x] **Stage 2.** Cross-remote state handled deliberately. Playwright integration
+      suite running axe against the *composed* page, not each remote alone. Built out
+      of order, after Stage 3: Playwright was already in the repo as a
+      measurement-script dependency, so this stage was mostly wiring a runner and a
+      CI-ready suite around a tool already proven to work here.
 - [x] **Stage 3.** NestJS BFF: aggregation, caching, holds the session token
 - [ ] **Stage 4.** Lazy loading and code splitting, measured against time to interactive
 - [ ] **Stage 5.** Independent deploy per remote, and a deliberate version-skew failure
@@ -448,11 +566,11 @@ command in this file.
 | Remote code present in host bundle | None | 0 | `grep -rl` above |
 | Shell survives a dead remote | Yes, degraded panel, no uncaught error | 0 | `npm run measure:outage` |
 | One remote down costs exactly one panel | Yes, in all four outage cases | 1 | `npm run measure:outage` |
-| Total JS on disk, everything shared | 528.4 KB | 1 | `npm run measure:shared` |
-| Total JS on disk, nothing shared | 507.0 KB | 1 | `npm run measure:shared` |
+| Total JS on disk, everything shared | 553.5 KB | 1 | `npm run measure:shared` |
+| Total JS on disk, nothing shared | 532.1 KB | 1 | `npm run measure:shared` |
 | Cost of sharing, on disk | +21.4 KB | 1 | `npm run measure:shared` |
-| JS fetched by the composed page, everything shared | 191.0 KB | 1 | `npm run measure:runtime` |
-| What the `shared-ui` singleton saves, fetched | 2.9 KB | 1 | `npm run measure:runtime` |
+| JS fetched for the whole journey, everything shared | 214.1 KB | 1 | `npm run measure:runtime` |
+| What the `shared-ui` singleton saves, fetched | 2.4 KB | 1 | `npm run measure:runtime` |
 | React copies fetched, everything shared | 1 | 1 | `npm run measure:runtime` |
 | React copies fetched, nothing shared | 3, and the page does not work | 1 | `npm run measure:runtime` |
 | React copies fetched, `singleton: false` | 1, and the page works | 1 | `npm run measure:runtime` |
@@ -461,7 +579,12 @@ command in this file.
 | Round trips saved by aggregation | 1 | 3 | `npm run measure:bff` |
 | Journey cache, back-to-back loads | MISS then HIT | 3 | `npm run measure:bff` |
 | Access token present in a remote's bundle | None | 3 | `grep -rl` above |
+| A deep link to `/cover` renders without visiting `/vehicle` | Yes | 2 | `npm run test:e2e` |
+| A refresh of `/cover` keeps its vehicle context | Yes | 2 | `npm run test:e2e` |
+| axe violations, remote-quote isolated vs composed | 0 vs 0 | 2 | `npm run measure:axe` |
+| axe violations, remote-account isolated vs composed | 0 vs 0 | 2 | `npm run measure:axe` |
 | Unit tests | 57 passing | 3 | `npm test` |
+| Playwright e2e + axe tests | 10 passing | 2 | `npm run test:e2e` |
 
 ## AI workflow
 
@@ -507,6 +630,20 @@ needed:
   sharing changed. The non-negotiable rule that a number must come from a command in
   this file means a later stage touching an earlier stage's bundle obligates a rerun,
   not a note explaining why the old number is "close enough".
+- Stage 2's routing change broke three existing measurement scripts, none of them
+  loudly. `measure-outage.mjs` at least failed its own assertions once `/` stopped
+  showing both panels. `measure-runtime.mjs`'s rendered check did not fail; it just
+  started reporting a value that could never be true again, silently, which is worse.
+  All three (`measure-outage`, `measure-bff`, `measure-runtime`) were rewritten to
+  check the right route for the right remote before this stage's own numbers were
+  trusted.
+- The first reading of `npm run measure:axe`'s zero-violations result was suspicion,
+  not acceptance: a harness that always reports zero and a harness that genuinely finds
+  nothing look identical from the output alone. Verified by running the same
+  `AxeBuilder` against a page deliberately built with an unlabelled button and a
+  missing `alt`, which reported seven violations. The zero on the real pages is
+  reported as a finding in the README because it survived that check, not because it
+  was the first number the script produced.
 
 ## Licence
 

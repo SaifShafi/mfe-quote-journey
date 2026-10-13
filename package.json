@@ -23,7 +23,9 @@
     "serve:dist": "node scripts/serve-dist.mjs",
     "measure:outage": "node scripts/measure-outage.mjs",
     "start:bff": "npm --workspace bff run start",
-    "measure:bff": "node scripts/measure-bff.mjs"
+    "measure:bff": "node scripts/measure-bff.mjs",
+    "measure:axe": "node scripts/measure-axe.mjs",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.5",
@@ -35,6 +37,8 @@
     "jsdom": "^24.0.0",
     "playwright": "^1.52.0",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "@playwright/test": "1.52.0",
+    "@axe-core/playwright": "^4.10.2"
   }
 }

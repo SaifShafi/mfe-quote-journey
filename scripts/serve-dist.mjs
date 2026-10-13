@@ -40,7 +40,7 @@ for (const [app, port] of APPS) {
 
   createServer((req, res) => {
     const path = new URL(req.url, 'http://localhost').pathname
-    const file = join(dir, path === '/' ? 'index.html' : path)
+    let file = join(dir, path === '/' ? 'index.html' : path)
 
     res.setHeader('Access-Control-Allow-Origin', '*')
     // No caching, so a measurement run cannot be contaminated by the previous one.
@@ -50,8 +50,24 @@ for (const [app, port] of APPS) {
     try {
       size = statSync(file).size
     } catch {
-      res.writeHead(404).end('not found')
-      return
+      // Stage 2: host-shell has client-side routes (/vehicle, /cover) that are
+      // not files on disk. The dev server's historyApiFallback does this for
+      // free; this hand-rolled server has to do it by hand, and only for
+      // host-shell, which is the only app with a client-side router. A request
+      // for an actual missing asset (wrong extension, typo) still 404s, which
+      // matters: that case should fail loudly, not silently serve the page.
+      if (app === 'host-shell' && !extname(path)) {
+        file = join(dir, 'index.html')
+        try {
+          size = statSync(file).size
+        } catch {
+          res.writeHead(404).end('not found')
+          return
+        }
+      } else {
+        res.writeHead(404).end('not found')
+        return
+      }
     }
 
     res.writeHead(200, {
